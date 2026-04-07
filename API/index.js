@@ -9,6 +9,7 @@ const uiHTML = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
     <title>My Simple Proxy</title>
     <style>
         body { font-family: sans-serif; background-color: #f4f4f9; display: flex; flex-direction: column; align-items: center; margin-top: 15%; }
@@ -55,7 +56,20 @@ app.all('*', async (req, res) => {
         return res.send(uiHTML);
     }
 
-    // 5. RUN THE PROXY ENGINE
+    // 5. THE HIGH-RISK BLOCKLIST
+    // Add any sites here you want to prevent the proxy from ever loading
+    const blocklist = ['netflix.com', 'hulu.com', 'bankofamerica.com', 'chase.com', 'wellsfargo.com', 'youtube.com'];
+    if (targetUrl && blocklist.some(domain => targetUrl.toLowerCase().includes(domain))) {
+        return res.status(403).send(`
+            <div style="font-family: sans-serif; text-align: center; margin-top: 10%;">
+                <h1 style="color: red;">Safety Protocol Active</h1>
+                <p>This domain is blocked to protect your Vercel account from being flagged.</p>
+                <a href="/?pw=${userPass}">Go Back</a>
+            </div>
+        `);
+    }
+
+    // 6. RUN THE PROXY ENGINE
     try {
         const fetchUrl = new URL(targetUrl);
         for (let key in req.query) {
