@@ -14,8 +14,8 @@ const uiHTML = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" href="https://www.google.com/favicon.ico" type="image/x-icon">
-    <title>Google Drive</title>
+    <link rel="icon" href="https://ssl.gstatic.com/docs/doclist/images/infinite_drive_2022q4.ico">
+    <title>My Drive - Google Drive</title>
     <style>
         body { font-family: sans-serif; background: #000; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
         .box { text-align: center; }
@@ -36,8 +36,8 @@ const uiHTML = `
         document.getElementById('p').addEventListener('submit', e => {
             e.preventDefault();
             const urlParams = new URLSearchParams(window.location.search);
-            const target = document.getElementById('u').value;
-            location.href = '/?pw=' + (urlParams.get('pw')||'') + '&target=' + btoa(target);
+            const target = btoa(document.getElementById('u').value);
+            location.href = '/?pw=' + (urlParams.get('pw')||'') + '&target=' + target;
         });
     </script>
 </body>
@@ -54,40 +54,41 @@ app.all('*', async (req, res) => {
 
     try {
         const response = await fetch(target, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+            headers: { 
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': '*/*',
+                'Referer': new URL(target).origin
+            }
         });
 
         const contentType = response.headers.get('content-type') || '';
 
+        // PIPING ASSETS (CSS, JS, IMAGES, WASM)
         if (!contentType.includes('text/html')) {
             const buffer = await response.arrayBuffer();
             res.setHeader('Content-Type', contentType);
             res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Cache-Control', 'max-age=31536000');
             return res.send(Buffer.from(buffer));
         }
 
+        // PROCESSING HTML
         let html = await response.text();
         const $ = cheerio.load(html);
         const origin = new URL(target).origin;
 
         // CLOAKING
-        $('title').text('Google Drive');
-        $('head').append('<link rel="icon" href="https://www.google.com/favicon.ico" type="image/x-icon">');
-        $('head').prepend(`<base href="${origin}/">`);
-
-        // REWRITING ATTRIBUTES
-        const rewriteAttr = (tag, attr) => {
+        $('title').text('My Drive - Google Drive');
+        
+        // DEEP ATTRIBUTE REWRITE
+        const rewrite = (tag, attr) => {
             $(tag).each((i, el) => {
                 let val = $(el).attr(attr);
-                if (val && !val.startsWith('data:') && !val.startsWith('javascript:')) {
+                if (val && !val.startsWith('data:') && !val.startsWith('javascript:') && !val.startsWith('#')) {
                     try {
                         const absolute = new URL(val, target).href;
-                        $(el).attr(attr, `/?pw=${pw}&target=${encode(absolute)}`);
-                        
-                        // NEW: FORCING SAME-TAB NAVIGATION
-                        if (tag === 'a') {
-                            $(el).attr('target', '_self');
-                        }
+                        $(el).attr(attr, \`/?pw=\${pw}&target=\${encode(absolute)}\`);
+                        if (tag === 'a') $(el).attr('target', '_self');
                     } catch(e) {}
                 }
             });
@@ -95,45 +96,46 @@ app.all('*', async (req, res) => {
 
         ['img', 'script', 'link', 'source', 'a', 'iframe', 'form'].forEach(t => {
             const a = (t === 'link' || t === 'a') ? 'href' : (t === 'form' ? 'action' : 'src');
-            rewriteAttr(t, a);
+            rewrite(t, a);
         });
 
-        // STEALTH UI + JS INTERCEPTORS
-        const inject = `
-            <div id="base-ui" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.9);color:#fff;padding:10px 20px;border-radius:50px;z-index:9999999;display:none;border:1px solid #333;font-family:sans-serif;">
-                <b>Base</b> | <button onclick="location.href='/?pw=${pw}'">Home</button>
-            </div>
+        // INJECT VIRTUAL NAVIGATION SCRIPT (To beat the Extension)
+        const vNav = `
             <script>
-                // 1. Keyboard Toggle
-                document.addEventListener('keydown', e => {
-                    if(e.shiftKey && e.key.toLowerCase() === 'q') {
-                        const ui = document.getElementById('base-ui');
-                        ui.style.display = ui.style.display === 'none' ? 'block' : 'none';
+                // Intercept all clicks to prevent page reloads
+                document.addEventListener('click', async e => {
+                    const link = e.target.closest('a');
+                    if (link && link.href.includes('target=')) {
+                        e.preventDefault();
+                        // Instead of navigating, we just update the content
+                        window.location.replace(link.href);
                     }
                 });
 
-                // 2. JS Window.open Interceptor (Prevents scripts from opening new tabs)
-                window.open = function(url) {
-                    location.href = url;
-                    return null;
-                };
-
-                // 3. Dynamic Link Catcher (Catches links added after the page loads)
-                document.addEventListener('click', e => {
-                    const link = e.target.closest('a');
-                    if (link && link.target === '_blank') {
-                        link.target = '_self';
+                // Fake the Window.open to stay in-tab
+                window.open = (url) => { window.location.href = url; return null; };
+                
+                // Keyboard Dashboard
+                document.addEventListener('keydown', e => {
+                    if(e.shiftKey && e.key.toLowerCase() === 'q') {
+                        const menu = document.getElementById('base-menu');
+                        menu.style.display = menu.style.display === 'none' ? 'flex' : 'none';
                     }
                 });
             </script>
+            <div id="base-menu" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.95);color:#fff;padding:10px 25px;border-radius:50px;z-index:9999999;display:none;border:1px solid #333;font-family:sans-serif;align-items:center;box-shadow:0 0 20px rgba(0,0,0,0.5);">
+                <span style="font-weight:bold;color:#fff;margin-right:15px">BASE</span>
+                <button onclick="location.href='/?pw=${pw}'" style="background:#222;color:#fff;border:none;padding:8px 15px;border-radius:20px;cursor:pointer;">Home</button>
+                <button onclick="location.reload()" style="background:#222;color:#fff;border:none;padding:8px 15px;border-radius:20px;margin-left:5px;cursor:pointer;">Reload</button>
+            </div>
         `;
 
-        $('body').append(inject);
+        $('body').append(vNav);
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.send($.html());
 
     } catch (e) {
-        res.status(500).send("Error.");
+        res.status(500).send("Base Error: Site Unreachable.");
     }
 });
 
