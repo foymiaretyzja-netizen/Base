@@ -1,27 +1,62 @@
 const express = require('express');
-const path = require('path');
 const cheerio = require('cheerio');
 const app = express();
 
-app.get('/', async (req, res) => {
-    // 1. PASSWORD PROTECTION
+// 1. WE STORE THE HTML UI HERE NOW SO VERCEL CAN'T BYPASS IT
+const uiHTML = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Simple Proxy</title>
+    <style>
+        body { font-family: sans-serif; background-color: #f4f4f9; display: flex; flex-direction: column; align-items: center; margin-top: 15%; }
+        input[type="url"] { width: 300px; padding: 10px; border-radius: 5px; border: 1px solid #ccc; }
+        button { padding: 10px 20px; border-radius: 5px; border: none; background-color: #007bff; color: white; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+    </style>
+</head>
+<body>
+    <h1>Prototype Proxy</h1>
+    <p>Enter a URL to browse safely</p>
+    <form id="proxyForm">
+        <input type="url" id="targetUrl" placeholder="https://example.com" required>
+        <button type="submit">Go</button>
+    </form>
+    <script>
+        document.getElementById('proxyForm').addEventListener('submit', function(event) {
+            event.preventDefault(); 
+            const url = document.getElementById('targetUrl').value;
+            const urlParams = new URLSearchParams(window.location.search);
+            const pw = urlParams.get('pw') || '';
+            window.location.href = '/?pw=' + encodeURIComponent(pw) + '&target=' + encodeURIComponent(url);
+        });
+    </script>
+</body>
+</html>
+`;
+
+// 2. USE '*' TO CATCH EVERY SINGLE ROUTE VERCEL TRIES TO THROW AT IT
+app.all('*', async (req, res) => {
+    
     const userPass = req.query.pw;
     const correctPass = process.env.PROXY_PASSWORD;
 
+    // 3. PASSWORD CHECK
     if (userPass !== correctPass) {
         return res.status(401).send("<h1>Access Denied</h1><p>Please add ?pw=YOUR_PASSWORD to the URL.</p>");
     }
 
     const targetUrl = req.query.target;
 
-    // 2. LOAD UI IF NO TARGET IS PROVIDED
+    // 4. LOAD THE HTML UI IF NO TARGET IS TYPED
     if (!targetUrl) {
-        // Vercel requires process.cwd() to find files in the public folder
-        return res.sendFile(path.join(process.cwd(), 'public', 'index.html'));
+        return res.send(uiHTML);
     }
 
+    // 5. RUN THE PROXY ENGINE
     try {
-        // 3. REBUILD URL FOR SEARCH ENGINES (Ignores internal variables)
         const fetchUrl = new URL(targetUrl);
         for (let key in req.query) {
             if (key !== 'target' && key !== 'pw') {
@@ -29,7 +64,6 @@ app.get('/', async (req, res) => {
             }
         }
 
-        // 4. FETCH THE WEBSITE
         const response = await fetch(fetchUrl.toString(), {
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64 AppleWebKit/537.36)' }
         });
@@ -38,7 +72,6 @@ app.get('/', async (req, res) => {
         const $ = cheerio.load(html);
         const base = new URL(targetUrl);
 
-        // 5. REWRITE LINKS (And keep password attached)
         $('a').each((i, link) => {
             let href = $(link).attr('href');
             if (href && !href.startsWith('javascript:')) {
@@ -49,7 +82,6 @@ app.get('/', async (req, res) => {
             }
         });
 
-        // 6. REWRITE FORMS (And inject hidden password)
         $('form').each((i, form) => {
             let action = $(form).attr('action');
             if (action) {
@@ -62,7 +94,6 @@ app.get('/', async (req, res) => {
             }
         });
 
-        // 7. SEND TO BROWSER
         res.send($.html());
         
     } catch (error) {
@@ -70,9 +101,4 @@ app.get('/', async (req, res) => {
     }
 });
 
-app.get('/*', (req, res) => {
-    res.status(404).send('Proxy error: A file or path tried to escape the proxy.');
-});
-
-// DO NOT USE app.listen ON VERCEL. EXPORT THE APP INSTEAD!
 module.exports = app;
