@@ -2,9 +2,10 @@ const express = require('express');
 const cheerio = require('cheerio');
 const app = express();
 
-const encode = (str) => Buffer.from(str).toString('base64');
+// FIXED: Safely URL-encode the Base64 string so the browser doesn't break on "=" or "+"
+const encode = (str) => encodeURIComponent(Buffer.from(str).toString('base64'));
 const decode = (str) => {
-    try { return Buffer.from(str, 'base64').toString('utf8'); }
+    try { return Buffer.from(decodeURIComponent(str), 'base64').toString('utf8'); }
     catch(e) { return str; }
 };
 
@@ -28,7 +29,7 @@ const uiHTML = `
     <div class="box">
         <h1>Base</h1>
         <form id="p">
-            <input type="url" id="u" placeholder="Enter URL..." required><br>
+            <input type="url" id="u" placeholder="example.com" required><br>
             <button type="submit">Launch</button>
         </form>
     </div>
@@ -36,7 +37,11 @@ const uiHTML = `
         document.getElementById('p').addEventListener('submit', e => {
             e.preventDefault();
             const urlParams = new URLSearchParams(window.location.search);
-            const target = btoa(document.getElementById('u').value);
+            let rawUrl = document.getElementById('u').value;
+            // FIXED: Auto-add https:// if the user forgets it
+            if (!rawUrl.startsWith('http')) rawUrl = 'https://' + rawUrl;
+            
+            const target = encodeURIComponent(btoa(rawUrl));
             location.href = '/?pw=' + (urlParams.get('pw')||'') + '&target=' + target;
         });
     </script>
@@ -50,7 +55,9 @@ app.all('*', async (req, res) => {
 
     let target = req.query.target;
     if (!target) return res.send(uiHTML);
+    
     target = decode(target);
+    if (!target.startsWith('http')) target = 'https://' + target;
 
     try {
         const response = await fetch(target, {
@@ -63,7 +70,6 @@ app.all('*', async (req, res) => {
 
         const contentType = response.headers.get('content-type') || '';
 
-        // PIPING ASSETS (CSS, JS, IMAGES, WASM)
         if (!contentType.includes('text/html')) {
             const buffer = await response.arrayBuffer();
             res.setHeader('Content-Type', contentType);
@@ -72,22 +78,20 @@ app.all('*', async (req, res) => {
             return res.send(Buffer.from(buffer));
         }
 
-        // PROCESSING HTML
         let html = await response.text();
         const $ = cheerio.load(html);
         const origin = new URL(target).origin;
 
-        // CLOAKING
         $('title').text('My Drive - Google Drive');
         
-        // DEEP ATTRIBUTE REWRITE
         const rewrite = (tag, attr) => {
             $(tag).each((i, el) => {
                 let val = $(el).attr(attr);
                 if (val && !val.startsWith('data:') && !val.startsWith('javascript:') && !val.startsWith('#')) {
                     try {
                         const absolute = new URL(val, target).href;
-                        $(el).attr(attr, \`/?pw=\${pw}&target=\${encode(absolute)}\`);
+                        // FIXED: Clean string concatenation to prevent syntax crashes
+                        $(el).attr(attr, '/?pw=' + pw + '&target=' + encode(absolute));
                         if (tag === 'a') $(el).attr('target', '_self');
                     } catch(e) {}
                 }
@@ -99,23 +103,18 @@ app.all('*', async (req, res) => {
             rewrite(t, a);
         });
 
-        // INJECT VIRTUAL NAVIGATION SCRIPT (To beat the Extension)
         const vNav = `
             <script>
-                // Intercept all clicks to prevent page reloads
-                document.addEventListener('click', async e => {
+                document.addEventListener('click', e => {
                     const link = e.target.closest('a');
                     if (link && link.href.includes('target=')) {
                         e.preventDefault();
-                        // Instead of navigating, we just update the content
                         window.location.replace(link.href);
                     }
                 });
 
-                // Fake the Window.open to stay in-tab
-                window.open = (url) => { window.location.href = url; return null; };
+                window.open = (url) => { window.location.replace(url); return null; };
                 
-                // Keyboard Dashboard
                 document.addEventListener('keydown', e => {
                     if(e.shiftKey && e.key.toLowerCase() === 'q') {
                         const menu = document.getElementById('base-menu');
@@ -135,7 +134,8 @@ app.all('*', async (req, res) => {
         res.send($.html());
 
     } catch (e) {
-        res.status(500).send("Base Error: Site Unreachable.");
+        // FIXED: Graceful error handling instead of throwing a 500 crash
+        res.send("<body style='background:#000;color:#fff;text-align:center;padding:50px;font-family:sans-serif;'><h1>Connection Error</h1><p>The proxy could not fetch this page safely.</p><button onclick='window.history.back()' style='padding:10px 20px;border-radius:10px;cursor:pointer;'>Go Back</button></body>");
     }
 });
 
