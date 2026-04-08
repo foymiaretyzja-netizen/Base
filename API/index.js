@@ -1,61 +1,33 @@
 const express = require('express');
 const cheerio = require('cheerio');
+const path = require('path');
+const fs = require('fs');
 const app = express();
 
-// FIXED: Safely URL-encode the Base64 string so the browser doesn't break on "=" or "+"
 const encode = (str) => encodeURIComponent(Buffer.from(str).toString('base64'));
 const decode = (str) => {
     try { return Buffer.from(decodeURIComponent(str), 'base64').toString('utf8'); }
     catch(e) { return str; }
 };
 
-const uiHTML = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" href="https://ssl.gstatic.com/docs/doclist/images/infinite_drive_2022q4.ico">
-    <title>My Drive - Google Drive</title>
-    <style>
-        body { font-family: sans-serif; background: #000; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        .box { text-align: center; }
-        h1 { font-size: 5rem; margin: 0; letter-spacing: -4px; font-weight: 900; }
-        input { width: 320px; padding: 18px; border-radius: 14px; border: 1px solid #222; background: #111; color: #fff; margin-bottom: 15px; outline: none; font-size: 16px; }
-        button { width: 358px; padding: 18px; border-radius: 14px; border: none; background: #fff; color: #000; font-weight: 700; cursor: pointer; font-size: 16px; }
-    </style>
-</head>
-<body>
-    <div class="box">
-        <h1>Base</h1>
-        <form id="p">
-            <input type="url" id="u" placeholder="example.com" required><br>
-            <button type="submit">Launch</button>
-        </form>
-    </div>
-    <script>
-        document.getElementById('p').addEventListener('submit', e => {
-            e.preventDefault();
-            const urlParams = new URLSearchParams(window.location.search);
-            let rawUrl = document.getElementById('u').value;
-            // FIXED: Auto-add https:// if the user forgets it
-            if (!rawUrl.startsWith('http')) rawUrl = 'https://' + rawUrl;
-            
-            const target = encodeURIComponent(btoa(rawUrl));
-            location.href = '/?pw=' + (urlParams.get('pw')||'') + '&target=' + target;
-        });
-    </script>
-</body>
-</html>
-`;
-
 app.all('*', async (req, res) => {
     const pw = req.query.pw;
     if (pw !== process.env.PROXY_PASSWORD) return res.status(401).send("Unauthorized");
 
     let target = req.query.target;
-    if (!target) return res.send(uiHTML);
     
+    // IF NO TARGET: Send the separated Frontend UI
+    if (!target) {
+        try {
+            const htmlPath = path.join(__dirname, '../public/index.html');
+            const uiHTML = fs.readFileSync(htmlPath, 'utf8');
+            return res.send(uiHTML);
+        } catch (err) {
+            return res.status(500).send("Error loading UI.");
+        }
+    }
+    
+    // IF TARGET EXISTS: Run the Proxy Engine
     target = decode(target);
     if (!target.startsWith('http')) target = 'https://' + target;
 
@@ -80,7 +52,6 @@ app.all('*', async (req, res) => {
 
         let html = await response.text();
         const $ = cheerio.load(html);
-        const origin = new URL(target).origin;
 
         $('title').text('My Drive - Google Drive');
         
@@ -90,7 +61,6 @@ app.all('*', async (req, res) => {
                 if (val && !val.startsWith('data:') && !val.startsWith('javascript:') && !val.startsWith('#')) {
                     try {
                         const absolute = new URL(val, target).href;
-                        // FIXED: Clean string concatenation to prevent syntax crashes
                         $(el).attr(attr, '/?pw=' + pw + '&target=' + encode(absolute));
                         if (tag === 'a') $(el).attr('target', '_self');
                     } catch(e) {}
@@ -134,7 +104,6 @@ app.all('*', async (req, res) => {
         res.send($.html());
 
     } catch (e) {
-        // FIXED: Graceful error handling instead of throwing a 500 crash
         res.send("<body style='background:#000;color:#fff;text-align:center;padding:50px;font-family:sans-serif;'><h1>Connection Error</h1><p>The proxy could not fetch this page safely.</p><button onclick='window.history.back()' style='padding:10px 20px;border-radius:10px;cursor:pointer;'>Go Back</button></body>");
     }
 });
