@@ -24,9 +24,7 @@ app.all('*', async (req, res) => {
         }
     });
 
-    if (!pw && cookies['base_pw']) {
-        pw = cookies['base_pw'];
-    }
+    if (!pw && cookies['base_pw']) pw = cookies['base_pw'];
 
     if (pw !== process.env.PROXY_PASSWORD) {
         return res.status(401).send("Unauthorized. Please append ?pw=YOUR_PASSWORD to the URL to login.");
@@ -43,9 +41,105 @@ app.all('*', async (req, res) => {
     
     target = decode(target);
     
+    // --- 🔍 NEW: BASE CUSTOM SEARCH ENGINE ---
     if (!target.includes('.') || target.includes(' ')) {
-        target = 'https://duckduckgo.com/?q=' + encodeURIComponent(target);
-    } else if (!target.startsWith('http')) {
+        try {
+            // Fetch raw HTML results from a lightweight index
+            const searchRes = await fetch('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(target), {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+            });
+            const searchHtml = await searchRes.text();
+            const $s = cheerio.load(searchHtml);
+            
+            let resultsHTML = '';
+            
+            // Extract the top 10 results
+            $s('.result').slice(0, 10).each((i, el) => {
+                const title = $s(el).find('.result__title a').text();
+                const snippet = $s(el).find('.result__snippet').text();
+                let rawLink = $s(el).find('.result__a').attr('href');
+                
+                if (title && rawLink) {
+                    // Clean up tracking URLs
+                    if (rawLink.startsWith('//duckduckgo.com/l/?')) {
+                        const urlParams = new URLSearchParams(rawLink.split('?')[1]);
+                        rawLink = decodeURIComponent(urlParams.get('uddg') || '');
+                    }
+                    
+                    const domain = new URL(rawLink).hostname;
+                    // Grab high-quality logo/favicon automatically
+                    const logo = `https://www.google.com/s2/favicons?sz=64&domain=${domain}`;
+                    const encodedLink = encode(rawLink);
+
+                    resultsHTML += `
+                        <div style="background:#111; padding:20px; border-radius:12px; margin-bottom:15px; border: 1px solid #222; transition: border-color 0.2s;">
+                            <div style="display:flex; align-items:center; margin-bottom:8px;">
+                                <img src="${logo}" style="width:20px; height:20px; margin-right:10px; border-radius:4px; background:#fff;">
+                                <span style="color:#888; font-size:13px; font-weight:bold;">${domain}</span>
+                            </div>
+                            <a href="/?pw=${pw}&target=${encodedLink}" style="color:#fff; font-size:22px; text-decoration:none; font-weight:bold; display:block; margin-bottom:8px;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${title}</a>
+                            <p style="color:#aaa; font-size:15px; margin:0; line-height:1.6;">${snippet}</p>
+                        </div>
+                    `;
+                }
+            });
+
+            // The Custom Search UI
+            const customUI = `
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Base Search</title>
+                    <style>
+                        body { background:#000; color:#fff; font-family:sans-serif; margin:0; padding:40px 20px; }
+                        .container { max-width:800px; margin:0 auto; }
+                        .header { display:flex; align-items:center; gap:20px; margin-bottom:40px; }
+                        .logo { font-size:2rem; font-weight:900; letter-spacing:-2px; cursor:pointer; margin:0; }
+                        input { flex-grow:1; padding:16px; border-radius:12px; border:1px solid #333; background:#111; color:#fff; font-size:16px; outline:none; }
+                        button { padding:16px 30px; border-radius:12px; border:none; background:#fff; color:#000; font-weight:bold; cursor:pointer; font-size:16px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <form id="searchForm" class="header">
+                            <h1 class="logo" onclick="window.location.replace('/')">Base</h1>
+                            <input type="text" id="s" value="${target}" autocomplete="off">
+                            <button type="submit">Search</button>
+                        </form>
+                        <div id="results">
+                            ${resultsHTML || '<h3 style="color:#888; text-align:center; margin-top:50px;">No results found for this query.</h3>'}
+                        </div>
+                    </div>
+                    <script>
+                        document.getElementById('searchForm').addEventListener('submit', e => {
+                            e.preventDefault();
+                            const val = document.getElementById('s').value;
+                            window.location.replace('/?pw=${pw}&target=' + encodeURIComponent(btoa(val)));
+                        });
+                        // Override link clicks so they don't trigger the extension
+                        document.addEventListener('click', e => {
+                            const link = e.target.closest('a');
+                            if (link && link.href.includes('target=')) {
+                                e.preventDefault();
+                                window.location.replace(link.href);
+                            }
+                        });
+                    </script>
+                </body>
+                </html>
+            `;
+            
+            res.setHeader('Content-Type', 'text/html');
+            return res.send(customUI);
+
+        } catch (err) {
+            target = 'https://duckduckgo.com/?q=' + encodeURIComponent(target);
+        }
+    } 
+    // --- 🌍 NORMAL PROXY ROUTING ---
+    else if (!target.startsWith('http')) {
         target = 'https://' + target;
     }
 
@@ -96,7 +190,6 @@ app.all('*', async (req, res) => {
 
         const vNav = `
             <script>
-                // 1. Intercept normal link clicks
                 document.addEventListener('click', e => {
                     const link = e.target.closest('a');
                     if (link && link.href.includes('target=')) {
@@ -105,34 +198,24 @@ app.all('*', async (req, res) => {
                     }
                 });
 
-                // 2. NEW: Intercept Form Submissions (Fixes DuckDuckGo searches)
                 document.addEventListener('submit', e => {
                     const form = e.target;
                     if (form.action && form.action.includes('target=')) {
                         e.preventDefault();
-                        
                         try {
                             const urlParams = new URLSearchParams(new URL(form.action).search);
                             const proxyTargetBase64 = urlParams.get('target');
-                            
                             if (proxyTargetBase64) {
-                                // Decode original action back to normal URL
                                 const decodedAction = atob(decodeURIComponent(proxyTargetBase64));
-                                
-                                // Merge the typed form data into the URL safely
                                 if (!form.method || form.method.toLowerCase() === 'get') {
                                     const formData = new FormData(form);
                                     const searchParams = new URLSearchParams(formData).toString();
-                                    
                                     const joiner = decodedAction.includes('?') ? '&' : '?';
                                     const finalTarget = encodeURIComponent(btoa(decodedAction + joiner + searchParams));
-                                    
                                     window.location.replace('/?target=' + finalTarget);
                                 }
                             }
-                        } catch (err) {
-                            console.error('Form proxy error:', err);
-                        }
+                        } catch (err) {}
                     }
                 });
 
@@ -157,7 +240,7 @@ app.all('*', async (req, res) => {
         res.send($.html());
 
     } catch (e) {
-        res.send("<body style='background:#000;color:#fff;text-align:center;padding:50px;font-family:sans-serif;'><h1>Connection Error</h1><p>The proxy could not fetch this page safely.</p><button onclick='window.history.back()' style='padding:10px 20px;border-radius:10px;cursor:pointer;'>Go Back</button></body>");
+        res.send("<body style='background:#000;color:#fff;text-align:center;padding:50px;font-family:sans-serif;'><h1>Connection Error</h1><p>The proxy could not fetch this page safely.</p><button onclick='window.location.replace(\"/\")' style='padding:10px 20px;border-radius:10px;cursor:pointer;background:#fff;color:#000;font-weight:bold;border:none;'>Go Home</button></body>");
     }
 });
 
