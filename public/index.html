@@ -24,11 +24,9 @@
         
         .tab { display: flex; align-items: center; justify-content: space-between; padding: 0 15px; height: 100%; min-width: 160px; max-width: 220px; background: transparent; color: #888; cursor: pointer; border-right: 1px solid #333; font-size: 14px; transition: 0.2s; user-select: none; }
         .tab:hover { background: #222; }
-        
-        /* The Active Tab Highlight */
         .tab.active { background: var(--tab-active); color: var(--accent); font-weight: 500; border-bottom: 3px solid var(--accent); }
         
-        /* Favicon and Title Styling */
+        /* Favicon and Title */
         .tab-content { display: flex; align-items: center; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; flex-grow: 1; }
         .favicon { width: 16px; height: 16px; margin-right: 8px; border-radius: 3px; display: none; background: #fff; }
         .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -36,10 +34,10 @@
         .close-tab { font-size: 18px; margin-left: 10px; opacity: 0.5; padding: 0px 6px; border-radius: 4px; line-height: 1; }
         .close-tab:hover { opacity: 1; background: rgba(255,255,255,0.1); }
 
-        #add-tab { background: transparent; border: none; color: #888; font-size: 24px; cursor: pointer; padding: 0 15px; height: 100%; transition: 0.2s; }
+        #add-tab, #fullscreen-btn { background: transparent; border: none; color: #888; cursor: pointer; height: 100%; transition: 0.2s; }
+        #add-tab { font-size: 24px; padding: 0 15px; }
         #add-tab:hover { color: var(--accent); background: #222; }
-
-        #fullscreen-btn { background: transparent; border: none; color: #888; font-size: 20px; cursor: pointer; padding: 0 15px; height: 100%; margin-left: auto; transition: 0.2s; }
+        #fullscreen-btn { font-size: 20px; padding: 0 15px; margin-left: auto; }
         #fullscreen-btn:hover { color: var(--accent); }
 
         /* Viewport Area */
@@ -47,7 +45,7 @@
         .view { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; border: none; }
         .view.active { display: flex; }
 
-        /* Home Page View Styling */
+        /* Home View Styling */
         .home-view { align-items: center; justify-content: center; flex-direction: column; background: var(--bg); }
         .home-view h1 { font-size: 4rem; font-weight: 900; letter-spacing: -2px; margin-bottom: 30px; }
         .search-box { display: flex; width: 100%; max-width: 600px; gap: 10px; padding: 0 20px; }
@@ -57,6 +55,15 @@
         /* Toast Notification */
         #toast { position: fixed; bottom: -60px; left: 50%; transform: translateX(-50%); background: #222; color: #fff; padding: 12px 24px; border-radius: 30px; border: 1px solid #444; font-size: 14px; font-weight: 500; transition: bottom 0.4s cubic-bezier(0.18, 0.89, 0.32, 1.28); z-index: 9999; box-shadow: 0 10px 30px rgba(0,0,0,0.5); pointer-events: none; }
         #toast.show { bottom: 30px; }
+
+        /* Base Diagnostics Terminal */
+        #base-terminal { position: fixed; bottom: 0; left: 0; width: 100%; height: 250px; background: rgba(15, 15, 15, 0.98); border-top: 1px solid #333; font-family: 'Courier New', Courier, monospace; z-index: 9999999; display: none; flex-direction: column; backdrop-filter: blur(10px); box-shadow: 0 -10px 30px rgba(0,0,0,0.5); }
+        #term-header { display: flex; justify-content: space-between; align-items: center; background: #111; padding: 8px 15px; border-bottom: 1px solid #333; font-size: 13px; color: #888; font-weight: bold; }
+        #term-controls button { background: #2a2a2a; color: #fff; border: 1px solid #444; padding: 4px 12px; margin-left: 8px; cursor: pointer; border-radius: 4px; font-size: 12px; transition: 0.2s; }
+        #term-controls button:hover { background: #444; }
+        #term-output { flex-grow: 1; padding: 15px; overflow-y: auto; font-size: 13px; white-space: pre-wrap; word-break: break-word; color: #ff5555; }
+        .log-err { margin-bottom: 8px; border-bottom: 1px dashed #222; padding-bottom: 8px; line-height: 1.4; }
+        .log-time { color: #888; margin-right: 10px; font-size: 11px; }
     </style>
 </head>
 <body>
@@ -69,6 +76,18 @@
 
     <div id="viewport"></div>
     <div id="toast">Press Shift+Q or Esc to exit fullscreen</div>
+
+    <div id="base-terminal">
+        <div id="term-header">
+            <span>> Base Diagnostics Terminal</span>
+            <div id="term-controls">
+                <button id="term-clear">Clear</button>
+                <button id="term-pause">Pause</button>
+                <button id="term-close">Close</button>
+            </div>
+        </div>
+        <div id="term-output"></div>
+    </div>
 
     <script>
         const tabsContainer = document.getElementById('tabs-container');
@@ -88,7 +107,6 @@
             const tabEl = document.createElement('div');
             tabEl.className = 'tab';
             tabEl.id = 'ui-' + tabId;
-            // Added favicon image tag inside the tab content
             tabEl.innerHTML = `
                 <div class="tab-content">
                     <img class="favicon" src="" alt="icon">
@@ -102,7 +120,6 @@
             });
             
             tabEl.querySelector('.close-tab').addEventListener('click', () => closeTab(tabId));
-            
             tabsContainer.appendChild(tabEl);
 
             const viewEl = document.createElement('div');
@@ -135,22 +152,18 @@
             tabs = tabs.filter(t => t !== tabId);
             
             if (activeTabId === tabId) {
-                if (tabs.length > 0) {
-                    switchTab(tabs[tabs.length - 1]);
-                } else {
-                    createTab();
-                }
+                if (tabs.length > 0) switchTab(tabs[tabs.length - 1]);
+                else createTab();
             }
         }
 
-        // --- PROXY LAUNCH & METADATA EXTRACTION LOGIC ---
+        // --- PROXY LAUNCH & METADATA EXTRACTION ---
         window.launchSearch = function(event, tabId) {
             event.preventDefault();
             const input = event.target.querySelector('.search-input').value.trim();
             const targetBase64 = encodeURIComponent(btoa(input));
             
-            // 1. Determine the domain for the Favicon
-            let domain = "duckduckgo.com"; // Default to search engine
+            let domain = "duckduckgo.com"; 
             if (input.includes('.') && !input.includes(' ')) {
                 try { 
                     const urlToParse = input.startsWith('http') ? input : 'https://' + input;
@@ -158,33 +171,26 @@
                 } catch(e) {}
             }
 
-            // 2. Update UI instantly with Loading state and the logo
             const tabEl = document.getElementById('ui-' + tabId);
             const titleEl = tabEl.querySelector('.title');
             const iconEl = tabEl.querySelector('.favicon');
             
             titleEl.innerText = "Loading...";
             iconEl.src = `https://www.google.com/s2/favicons?sz=32&domain=${domain}`;
-            iconEl.style.display = "block"; // Make the logo visible
+            iconEl.style.display = "block"; 
 
-            // 3. Inject the Proxy Iframe
             const viewEl = document.getElementById('view-' + tabId);
             viewEl.innerHTML = `<iframe src="/?target=${targetBase64}" style="width:100%; height:100%; border:none;" id="iframe-${tabId}"></iframe>`;
             viewEl.classList.remove('home-view');
 
-            // 4. Listen for the iframe to finish loading to steal the true website title
             const iframe = document.getElementById('iframe-' + tabId);
             iframe.onload = () => {
                 try {
-                    // Because our backend proxies everything through the same domain, CORS allows this!
                     const siteTitle = iframe.contentDocument.title;
-                    if (siteTitle && siteTitle.trim() !== "") {
-                        titleEl.innerText = siteTitle;
-                    } else {
-                        titleEl.innerText = domain; // Fallback
-                    }
+                    if (siteTitle && siteTitle.trim() !== "") titleEl.innerText = siteTitle;
+                    else titleEl.innerText = domain;
                 } catch(e) {
-                    titleEl.innerText = domain; // Fallback if blocked
+                    titleEl.innerText = domain;
                 }
             };
         };
@@ -205,21 +211,63 @@
         });
 
         document.addEventListener('fullscreenchange', () => {
-            if (document.fullscreenElement) {
-                topBar.style.display = 'none';
-            } else {
-                topBar.style.display = 'flex';
-            }
+            topBar.style.display = document.fullscreenElement ? 'none' : 'flex';
         });
 
         document.addEventListener('keydown', (e) => {
             if (e.shiftKey && e.key.toLowerCase() === 'q') {
-                if (document.fullscreenElement) {
-                    document.exitFullscreen();
+                if (document.fullscreenElement) document.exitFullscreen();
+            }
+        });
+
+        // --- BASE TERMINAL LOGIC ---
+        const terminal = document.getElementById('base-terminal');
+        const termOutput = document.getElementById('term-output');
+        const btnClear = document.getElementById('term-clear');
+        const btnPause = document.getElementById('term-pause');
+        const btnClose = document.getElementById('term-close');
+
+        let isTermPaused = false;
+        let termHoldTimer = null;
+
+        document.addEventListener('keydown', (e) => {
+            if (e.shiftKey && e.key.toLowerCase() === 't') {
+                if (!termHoldTimer) {
+                    termHoldTimer = setTimeout(() => {
+                        terminal.style.display = 'flex';
+                        termOutput.scrollTop = termOutput.scrollHeight;
+                    }, 5000);
                 }
             }
         });
 
+        document.addEventListener('keyup', (e) => {
+            if (e.key.toLowerCase() === 't' || e.key === 'Shift') {
+                clearTimeout(termHoldTimer);
+                termHoldTimer = null;
+            }
+        });
+
+        btnClose.addEventListener('click', () => terminal.style.display = 'none');
+        btnClear.addEventListener('click', () => termOutput.innerHTML = '');
+        btnPause.addEventListener('click', () => {
+            isTermPaused = !isTermPaused;
+            btnPause.innerText = isTermPaused ? 'Resume' : 'Pause';
+            btnPause.style.color = isTermPaused ? '#f1c40f' : '#fff';
+        });
+
+        window.addEventListener('message', (e) => {
+            if (e.data && e.data.type === 'base_error' && !isTermPaused) {
+                const logEl = document.createElement('div');
+                logEl.className = 'log-err';
+                const time = new Date().toLocaleTimeString();
+                logEl.innerHTML = `<span class="log-time">[${time}]</span> ${e.data.log}`;
+                termOutput.appendChild(logEl);
+                termOutput.scrollTop = termOutput.scrollHeight;
+            }
+        });
+
+        // Init
         document.getElementById('add-tab').addEventListener('click', createTab);
         createTab();
     </script>
