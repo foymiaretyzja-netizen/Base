@@ -1,18 +1,22 @@
 [
     {
-        "title": "Lofi Hip Hop Radio - Beats to Relax/Study to",
-        "url": "https://www.youtube.com/watch?v=jfKfPfyJRdk"
-    },
-    {
         "title": "NASA Live: Official Stream of NASA TV",
-        "url": "https://youtu.be/21X5lGlDOfg"
+        "url": "https://youtu.be/21X5lGlDOfg",
+        "category": "news"
     },
     {
-        "title": "4K Costa Rica - Beautiful Nature",
-        "url": "https://www.youtube.com/watch?v=LXb3EKWsInQ"
+        "title": "DUNE: PART TWO | Official Trailer",
+        "url": "https://www.youtube.com/watch?v=Way9Dexny3w",
+        "category": "trailers"
     },
     {
-        "title": "Mickey mouse PHONK",
-        "url": "https://www.youtube.com/watch?v=vduYdpqG15Y"
+        "title": "Apple - Introducing Apple Vision Pro",
+        "url": "https://www.youtube.com/watch?v=TX9qSaGXFyg",
+        "category": "ads"
+    },
+    {
+        "title": "Breaking News: Live Tech Updates",
+        "url": "https://www.youtube.com/watch?v=jfKfPfyJRdk",
+        "category": "news"
     }
 ]
