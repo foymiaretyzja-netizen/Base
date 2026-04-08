@@ -123,13 +123,11 @@ app.all('*', async (req, res) => {
             res.setHeader('Content-Type', 'text/html');
             return res.send(customUI);
         } catch (err) {
-            // PATCH: If search scraping fails, safely pass the search URL to the proxy engine below
             target = 'https://duckduckgo.com/?q=' + encodeURIComponent(target);
         }
     } 
     
     // --- 3. MAIN PROXY ENGINE ---
-    // PATCH: No more 'else if'. Always flow into here if a target exists.
     if (!target.startsWith('http')) {
         target = 'https://' + target;
     }
@@ -150,7 +148,6 @@ app.all('*', async (req, res) => {
         if (!contentType.includes('text/html')) {
             const buffer = await response.arrayBuffer();
             
-            // Vercel Serverless limits payload to 4.5MB. If it's bigger (e.g. video), bypass the proxy to prevent a 500 Crash.
             if (buffer.byteLength > 4400000) {
                 return res.redirect(finalTarget); 
             }
@@ -192,9 +189,11 @@ app.all('*', async (req, res) => {
                 const _encodeUrl = (url) => encodeURIComponent(btoa(url));
                 const _baseUrl = "${finalTarget}"; 
 
+                // A. Silent Mocks
                 window.__tcfapi = function(cmd, ver, cb) { if(cb) cb(null, false); };
                 window.__uspapi = function(cmd, ver, cb) { if(cb) cb(null, false); };
 
+                // B. Base Error Forwarder
                 window.onerror = function(msg, url, line, col, error) {
                     try { window.parent.postMessage({ type: 'base_error', log: msg + ' (Line: ' + line + ')' }, '*'); } catch(e) {}
                     return false; 
@@ -209,6 +208,7 @@ app.all('*', async (req, res) => {
                     origConsoleErr.apply(console, args);
                 };
 
+                // C. The Universal Router
                 const _route = (url) => {
                     if (!url || typeof url !== 'string') return url;
                     if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('javascript:') || url.startsWith('#')) return url;
@@ -221,6 +221,7 @@ app.all('*', async (req, res) => {
                     return url;
                 };
 
+                // D. Dynamic Fetch/XHR Interceptors
                 const origFetch = window.fetch;
                 window.fetch = async function(resource, options) {
                     if (typeof resource === 'string') resource = _route(resource);
@@ -233,6 +234,7 @@ app.all('*', async (req, res) => {
                     return origOpen.call(this, method, _route(url), ...rest);
                 };
 
+                // E. Advanced DOM & Protocol Interceptors
                 const hookProperty = (proto, prop) => {
                     const desc = Object.getOwnPropertyDescriptor(proto, prop);
                     if (desc && desc.set) {
@@ -247,6 +249,22 @@ app.all('*', async (req, res) => {
                 hookProperty(HTMLImageElement.prototype, 'src');
                 hookProperty(HTMLIFrameElement.prototype, 'src');
 
+                const origSetAttr = Element.prototype.setAttribute;
+                Element.prototype.setAttribute = function(name, value) {
+                    if (['src', 'href', 'action'].includes(name.toLowerCase())) {
+                        value = _route(value);
+                    }
+                    return origSetAttr.call(this, name, value);
+                };
+
+                const origWebSocket = window.WebSocket;
+                window.WebSocket = function(url, protocols) {
+                    let directUrl = url;
+                    try { directUrl = new URL(url, _baseUrl).href; } catch(e) {}
+                    return protocols ? new origWebSocket(directUrl, protocols) : new origWebSocket(directUrl);
+                };
+
+                // F. Link & Form Hijackers
                 document.addEventListener('click', e => {
                     const link = e.target.closest('a');
                     if (link && link.href) {
@@ -289,7 +307,12 @@ app.all('*', async (req, res) => {
         res.send($.html());
 
     } catch (e) {
-        // Safe Catch: Returns a real HTML error instead of timing out Vercel
+        // --- 7. SMART ERROR HANDLING ---
+        if (req.headers.accept && req.headers.accept.includes('application/json')) {
+            res.setHeader('Content-Type', 'application/json');
+            return res.status(500).send(JSON.stringify({ error: "Proxy connection failed", statusCode: 500, data: null }));
+        }
+        
         res.send("<body style='background:#000;color:#fff;text-align:center;padding:50px;font-family:sans-serif;'><h1>Connection Error</h1><p>The proxy could not fetch this page safely.</p><button onclick='window.parent.location.replace(\"/\")' style='padding:10px 20px;border-radius:10px;cursor:pointer;background:#fff;color:#000;font-weight:bold;border:none;'>Go Home</button></body>");
     }
 });
