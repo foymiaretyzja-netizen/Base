@@ -12,7 +12,7 @@ const decode = (str) => {
 };
 
 app.all('*', async (req, res) => {
-    // --- AUTHENTICATION ---
+    // --- 1. AUTHENTICATION ---
     let pw = req.query.pw;
     let cookieHeader = req.headers.cookie || '';
     
@@ -38,7 +38,7 @@ app.all('*', async (req, res) => {
     
     target = decode(target);
     
-    // --- CUSTOM HEADLESS SEARCH ENGINE ---
+    // --- 2. CUSTOM HEADLESS SEARCH ENGINE ---
     if (!target.includes('.') || target.includes(' ')) {
         try {
             const searchRes = await fetch('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(target), {
@@ -124,7 +124,8 @@ app.all('*', async (req, res) => {
             target = 'https://duckduckgo.com/?q=' + encodeURIComponent(target);
         }
     } 
-    // --- MAIN PROXY ENGINE ---
+    
+    // --- 3. MAIN PROXY ENGINE ---
     else if (!target.startsWith('http')) {
         target = 'https://' + target;
     }
@@ -141,6 +142,7 @@ app.all('*', async (req, res) => {
         const finalTarget = response.url;
         const contentType = response.headers.get('content-type') || '';
 
+        // --- 4. MEDIA & ASSET HANDLER (Fixes broken images/video/CSS) ---
         if (!contentType.includes('text/html')) {
             const buffer = await response.arrayBuffer();
             res.setHeader('Set-Cookie', `base_pw=${pw}; Path=/; Max-Age=31536000; SameSite=Lax`);
@@ -150,6 +152,7 @@ app.all('*', async (req, res) => {
             return res.send(Buffer.from(buffer));
         }
 
+        // --- 5. HTML REWRITER ---
         let html = await response.text();
         const $ = cheerio.load(html);
 
@@ -173,12 +176,17 @@ app.all('*', async (req, res) => {
             rewrite(t, a);
         });
 
-        // --- CLIENT-SIDE INJECTIONS ---
+        // --- 6. CLIENT-SIDE INJECTIONS (The Bypass Magic + Error Fixes) ---
         const vNav = `
             <script>
                 const _encodeUrl = (url) => encodeURIComponent(btoa(url));
+                const _baseUrl = "${finalTarget}"; 
 
-                // 1. Base Error Forwarder
+                // A. Silent Mocks for third-party crashers
+                window.__tcfapi = function(cmd, ver, cb) { if(cb) cb(null, false); };
+                window.__uspapi = function(cmd, ver, cb) { if(cb) cb(null, false); };
+
+                // B. Base Error Forwarder
                 window.onerror = function(msg, url, line, col, error) {
                     try { window.parent.postMessage({ type: 'base_error', log: msg + ' (Line: ' + line + ')' }, '*'); } catch(e) {}
                     return false; 
@@ -193,30 +201,54 @@ app.all('*', async (req, res) => {
                     origConsoleErr.apply(console, args);
                 };
 
-                // 2. Dynamic Fetch/XHR Interceptors
+                // C. The Universal Router
+                const _route = (url) => {
+                    if (!url || typeof url !== 'string') return url;
+                    if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('javascript:') || url.startsWith('#')) return url;
+                    try {
+                        let abs = new URL(url, _baseUrl).href;
+                        if (abs.startsWith('http') && !abs.includes(window.location.host)) {
+                            return '/?target=' + _encodeUrl(abs);
+                        }
+                    } catch(e) {}
+                    return url;
+                };
+
+                // D. Dynamic Fetch/XHR Interceptors
                 const origFetch = window.fetch;
                 window.fetch = async function(resource, options) {
-                    let url = typeof resource === 'string' ? resource : resource.url;
-                    if (url && url.startsWith('http') && !url.includes(window.location.host)) {
-                        resource = '/?target=' + _encodeUrl(url);
-                    }
-                    return origFetch(resource, options);
+                    if (typeof resource === 'string') resource = _route(resource);
+                    else if (resource && resource.url) resource = new Request(_route(resource.url), options);
+                    return origFetch.call(this, resource, options);
                 };
 
                 const origOpen = XMLHttpRequest.prototype.open;
                 XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-                    if (typeof url === 'string' && url.startsWith('http') && !url.includes(window.location.host)) {
-                        url = '/?target=' + _encodeUrl(url);
-                    }
-                    return origOpen.call(this, method, url, ...rest);
+                    return origOpen.call(this, method, _route(url), ...rest);
                 };
 
-                // 3. Link & Form Hijackers
+                // E. Dynamic DOM Element Interceptor (Fixes Webpack & White Pages)
+                const hookProperty = (proto, prop) => {
+                    const desc = Object.getOwnPropertyDescriptor(proto, prop);
+                    if (desc && desc.set) {
+                        Object.defineProperty(proto, prop, {
+                            set: function(val) { return desc.set.call(this, _route(val)); },
+                            get: function() { return desc.get.call(this); }
+                        });
+                    }
+                };
+                hookProperty(HTMLScriptElement.prototype, 'src');
+                hookProperty(HTMLLinkElement.prototype, 'href');
+                hookProperty(HTMLImageElement.prototype, 'src');
+                hookProperty(HTMLIFrameElement.prototype, 'src');
+
+                // F. Link & Form Hijackers
                 document.addEventListener('click', e => {
                     const link = e.target.closest('a');
-                    if (link && link.href.includes('target=')) {
+                    if (link && link.href) {
                         e.preventDefault();
-                        window.location.replace(link.href);
+                        if (!link.href.includes('target=')) window.location.replace(_route(link.href));
+                        else window.location.replace(link.href);
                     }
                 });
 
@@ -238,10 +270,13 @@ app.all('*', async (req, res) => {
                                 }
                             }
                         } catch (err) {}
+                    } else if (form.action) {
+                        e.preventDefault();
+                        window.location.replace(_route(form.action));
                     }
                 });
 
-                window.open = (url) => { window.location.replace(url); return null; };
+                window.open = (url) => { window.location.replace(_route(url)); return null; };
             </script>
         `;
 
@@ -255,3 +290,4 @@ app.all('*', async (req, res) => {
 });
 
 module.exports = app;
+        `;
