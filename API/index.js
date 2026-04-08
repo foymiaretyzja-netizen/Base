@@ -12,15 +12,14 @@ const decode = (str) => {
 };
 
 app.all('*', async (req, res) => {
+    // --- AUTHENTICATION ---
     let pw = req.query.pw;
     let cookieHeader = req.headers.cookie || '';
     
     let cookies = {};
     cookieHeader.split(';').forEach(cookie => {
         let parts = cookie.split('=');
-        if (parts.length === 2) {
-            cookies[parts[0].trim()] = parts[1].trim();
-        }
+        if (parts.length === 2) cookies[parts[0].trim()] = parts[1].trim();
     });
 
     if (!pw && cookies['base_pw']) pw = cookies['base_pw'];
@@ -39,7 +38,7 @@ app.all('*', async (req, res) => {
     
     target = decode(target);
     
-    // Custom Search Engine
+    // --- CUSTOM HEADLESS SEARCH ENGINE ---
     if (!target.includes('.') || target.includes(' ')) {
         try {
             const searchRes = await fetch('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(target), {
@@ -96,7 +95,7 @@ app.all('*', async (req, res) => {
                 <body>
                     <div class="container">
                         <form id="searchForm" class="header">
-                            <h1 class="logo" onclick="window.location.replace('/')">Base</h1>
+                            <h1 class="logo" onclick="window.parent.location.replace('/')">Base</h1>
                             <input type="text" id="s" value="${target}" autocomplete="off">
                             <button type="submit">Search</button>
                         </form>
@@ -125,6 +124,7 @@ app.all('*', async (req, res) => {
             target = 'https://duckduckgo.com/?q=' + encodeURIComponent(target);
         }
     } 
+    // --- MAIN PROXY ENGINE ---
     else if (!target.startsWith('http')) {
         target = 'https://' + target;
     }
@@ -173,12 +173,27 @@ app.all('*', async (req, res) => {
             rewrite(t, a);
         });
 
+        // --- CLIENT-SIDE INJECTIONS ---
         const vNav = `
             <script>
-                // --- NEW: DYNAMIC REQUEST INTERCEPTORS ---
-                // This forces background JavaScript API calls to route through the proxy
                 const _encodeUrl = (url) => encodeURIComponent(btoa(url));
-                
+
+                // 1. Base Error Forwarder
+                window.onerror = function(msg, url, line, col, error) {
+                    try { window.parent.postMessage({ type: 'base_error', log: msg + ' (Line: ' + line + ')' }, '*'); } catch(e) {}
+                    return false; 
+                };
+
+                const origConsoleErr = console.error;
+                console.error = function(...args) {
+                    try {
+                        const errString = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+                        window.parent.postMessage({ type: 'base_error', log: errString }, '*');
+                    } catch(e) {}
+                    origConsoleErr.apply(console, args);
+                };
+
+                // 2. Dynamic Fetch/XHR Interceptors
                 const origFetch = window.fetch;
                 window.fetch = async function(resource, options) {
                     let url = typeof resource === 'string' ? resource : resource.url;
@@ -195,8 +210,8 @@ app.all('*', async (req, res) => {
                     }
                     return origOpen.call(this, method, url, ...rest);
                 };
-                // -----------------------------------------
 
+                // 3. Link & Form Hijackers
                 document.addEventListener('click', e => {
                     const link = e.target.closest('a');
                     if (link && link.href.includes('target=')) {
@@ -235,7 +250,7 @@ app.all('*', async (req, res) => {
         res.send($.html());
 
     } catch (e) {
-        res.send("<body style='background:#000;color:#fff;text-align:center;padding:50px;font-family:sans-serif;'><h1>Connection Error</h1><p>The proxy could not fetch this page safely.</p><button onclick='window.location.replace(\"/\")' style='padding:10px 20px;border-radius:10px;cursor:pointer;background:#fff;color:#000;font-weight:bold;border:none;'>Go Home</button></body>");
+        res.send("<body style='background:#000;color:#fff;text-align:center;padding:50px;font-family:sans-serif;'><h1>Connection Error</h1><p>The proxy could not fetch this page safely.</p><button onclick='window.parent.location.replace(\"/\")' style='padding:10px 20px;border-radius:10px;cursor:pointer;background:#fff;color:#000;font-weight:bold;border:none;'>Go Home</button></body>");
     }
 });
 
