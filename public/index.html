@@ -17,7 +17,7 @@
     <div class="box">
         <h1>Base</h1>
         <form id="p">
-            <input type="url" id="u" placeholder="example.com" required><br>
+            <input type="text" id="u" placeholder="Search the web or enter URL..." required autocomplete="off"><br>
             <button type="submit">Launch</button>
         </form>
     </div>
@@ -25,13 +25,12 @@
         document.getElementById('p').addEventListener('submit', e => {
             e.preventDefault();
             const urlParams = new URLSearchParams(window.location.search);
-            let rawUrl = document.getElementById('u').value;
+            const rawInput = document.getElementById('u').value;
             
-            if (!rawUrl.startsWith('http')) rawUrl = 'https://' + rawUrl;
+            const target = encodeURIComponent(btoa(rawInput));
             
-            const target = encodeURIComponent(btoa(rawUrl));
-            // Sends the request to your backend proxy engine
-            location.href = '/?pw=' + (urlParams.get('pw')||'') + '&target=' + target;
+            // FIXED: Using replace() here too so the extension doesn't catch the initial launch
+            window.location.replace('/?pw=' + (urlParams.get('pw')||'') + '&target=' + target);
         });
     </script>
 </body>
