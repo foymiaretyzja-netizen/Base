@@ -6,39 +6,199 @@
     <link rel="icon" href="https://ssl.gstatic.com/docs/doclist/images/infinite_drive_2022q4.ico">
     <title>My Drive - Google Drive</title>
     <style>
-        body { font-family: sans-serif; background: #000; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        .box { text-align: center; }
-        h1 { font-size: 5rem; margin: 0; letter-spacing: -4px; font-weight: 900; }
-        input { width: 320px; padding: 18px; border-radius: 14px; border: 1px solid #222; background: #111; color: #fff; margin-bottom: 15px; outline: none; font-size: 16px; }
-        button { width: 358px; padding: 18px; border-radius: 14px; border: none; background: #fff; color: #000; font-weight: 700; cursor: pointer; font-size: 16px; }
-        #loading { display: none; font-size: 1.5rem; color: #aaa; margin-top: 20px; font-weight: bold; }
-        .spinner { display: inline-block; animation: spin 1s linear infinite; }
-        @keyframes spin { 100% { transform: rotate(360deg); } }
+        /* Base Variables & Reset */
+        :root {
+            --bg: #0f0f0f;
+            --tab-bg: #1a1a1a;
+            --tab-active: #2a2a2a;
+            --text: #e0e0e0;
+            --accent: #ffffff;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+        /* Top Navigation & Tabs */
+        #top-bar { display: flex; align-items: center; background: var(--tab-bg); border-bottom: 1px solid #333; padding: 0 10px; height: 50px; flex-shrink: 0; transition: margin-top 0.3s ease; }
+        #tabs-container { display: flex; align-items: center; flex-grow: 1; overflow-x: auto; scrollbar-width: none; height: 100%; }
+        #tabs-container::-webkit-scrollbar { display: none; }
+        
+        .tab { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; height: 100%; min-width: 150px; max-width: 200px; background: transparent; color: #888; cursor: pointer; border-right: 1px solid #333; font-size: 14px; transition: 0.2s; user-select: none; }
+        .tab:hover { background: #222; }
+        
+        /* The Active Tab Highlight */
+        .tab.active { background: var(--tab-active); color: var(--accent); font-weight: 500; border-bottom: 3px solid var(--accent); }
+        .close-tab { font-size: 16px; margin-left: 10px; opacity: 0.5; padding: 2px 6px; border-radius: 4px; }
+        .close-tab:hover { opacity: 1; background: rgba(255,255,255,0.1); }
+
+        #add-tab { background: transparent; border: none; color: #888; font-size: 24px; cursor: pointer; padding: 0 15px; height: 100%; transition: 0.2s; }
+        #add-tab:hover { color: var(--accent); background: #222; }
+
+        #fullscreen-btn { background: transparent; border: none; color: #888; font-size: 20px; cursor: pointer; padding: 0 15px; height: 100%; margin-left: auto; transition: 0.2s; }
+        #fullscreen-btn:hover { color: var(--accent); }
+
+        /* Viewport Area */
+        #viewport { flex-grow: 1; position: relative; width: 100%; height: 100%; }
+        .view { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; border: none; }
+        .view.active { display: flex; }
+
+        /* Home Page View Styling */
+        .home-view { align-items: center; justify-content: center; flex-direction: column; background: var(--bg); }
+        .home-view h1 { font-size: 4rem; font-weight: 900; letter-spacing: -2px; margin-bottom: 30px; }
+        .search-box { display: flex; width: 100%; max-width: 600px; gap: 10px; padding: 0 20px; }
+        .search-input { flex-grow: 1; padding: 16px 24px; border-radius: 30px; border: 1px solid #333; background: #1a1a1a; color: #fff; font-size: 16px; outline: none; transition: 0.2s; }
+        .search-input:focus { border-color: #555; background: #222; }
+
+        /* Toast Notification */
+        #toast { position: fixed; bottom: -60px; left: 50%; transform: translateX(-50%); background: #222; color: #fff; padding: 12px 24px; border-radius: 30px; border: 1px solid #444; font-size: 14px; font-weight: 500; transition: bottom 0.4s cubic-bezier(0.18, 0.89, 0.32, 1.28); z-index: 9999; box-shadow: 0 10px 30px rgba(0,0,0,0.5); pointer-events: none; }
+        #toast.show { bottom: 30px; }
     </style>
 </head>
 <body>
-    <div class="box">
-        <h1>Base</h1>
-        <form id="p">
-            <input type="text" id="u" placeholder="Search the web or enter URL..." required autocomplete="off"><br>
-            <button type="submit">Launch</button>
-        </form>
-        <div id="loading"><span class="spinner">⚙️</span> I am Loading your request!</div>
+
+    <div id="top-bar">
+        <div id="tabs-container"></div>
+        <button id="add-tab" title="New Tab">+</button>
+        <button id="fullscreen-btn" title="Fullscreen">⛶</button>
     </div>
+
+    <div id="viewport"></div>
+
+    <div id="toast">Press Shift+Q or Esc to exit fullscreen</div>
+
     <script>
-        document.getElementById('p').addEventListener('submit', e => {
-            e.preventDefault();
-            const urlParams = new URLSearchParams(window.location.search);
-            const rawInput = document.getElementById('u').value;
-            const target = encodeURIComponent(btoa(rawInput));
+        const tabsContainer = document.getElementById('tabs-container');
+        const viewport = document.getElementById('viewport');
+        const topBar = document.getElementById('top-bar');
+        const toast = document.getElementById('toast');
+        
+        let tabCounter = 0;
+        let tabs = [];
+        let activeTabId = null;
+
+        // --- TAB MANAGEMENT ---
+        function createTab() {
+            tabCounter++;
+            const tabId = 'tab-' + tabCounter;
             
-            document.getElementById('p').style.display = 'none';
-            document.getElementById('loading').style.display = 'block';
+            // 1. Create the Tab UI Button
+            const tabEl = document.createElement('div');
+            tabEl.className = 'tab';
+            tabEl.id = 'ui-' + tabId;
+            tabEl.innerHTML = `<span class="title">Home</span> <span class="close-tab">×</span>`;
             
-            // Check for password in URL, otherwise trust the browser cookies
-            let pwParam = urlParams.get('pw') ? '&pw=' + urlParams.get('pw') : '';
-            window.location.replace('/?target=' + target + pwParam);
+            // Click to switch tabs
+            tabEl.addEventListener('click', (e) => {
+                if(e.target.className !== 'close-tab') switchTab(tabId);
+            });
+            
+            // Click to close tab
+            tabEl.querySelector('.close-tab').addEventListener('click', () => closeTab(tabId));
+            
+            tabsContainer.appendChild(tabEl);
+
+            // 2. Create the View (The Home Screen)
+            const viewEl = document.createElement('div');
+            viewEl.className = 'view home-view';
+            viewEl.id = 'view-' + tabId;
+            viewEl.innerHTML = `
+                <h1>Base</h1>
+                <form class="search-box" onsubmit="launchSearch(event, '${tabId}')">
+                    <input type="text" class="search-input" placeholder="Search the web or enter URL..." autocomplete="off" required>
+                </form>
+            `;
+            
+            viewport.appendChild(viewEl);
+            tabs.push(tabId);
+            switchTab(tabId);
+        }
+
+        function switchTab(tabId) {
+            activeTabId = tabId;
+            
+            // Update UI styles
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.getElementById('ui-' + tabId).classList.add('active');
+            
+            // Update Visible Views
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.getElementById('view-' + tabId).classList.add('active');
+        }
+
+        function closeTab(tabId) {
+            // Remove DOM elements
+            document.getElementById('ui-' + tabId).remove();
+            document.getElementById('view-' + tabId).remove();
+            
+            // Remove from array
+            tabs = tabs.filter(t => t !== tabId);
+            
+            // If we closed the active tab, switch to the last open one, or create a new one
+            if (activeTabId === tabId) {
+                if (tabs.length > 0) {
+                    switchTab(tabs[tabs.length - 1]);
+                } else {
+                    createTab();
+                }
+            }
+        }
+
+        // --- PROXY LAUNCH LOGIC ---
+        window.launchSearch = function(event, tabId) {
+            event.preventDefault();
+            const input = event.target.querySelector('.search-input').value;
+            const targetBase64 = encodeURIComponent(btoa(input));
+            
+            // Change the tab title
+            document.querySelector('#ui-' + tabId + ' .title').innerText = "Loading...";
+
+            // Create an iframe to replace the home view
+            const viewEl = document.getElementById('view-' + tabId);
+            
+            // Optional: You can append '?pw=YOUR_PASSWORD' if needed, but cookies handle it now!
+            viewEl.innerHTML = `<iframe src="/?target=${targetBase64}" style="width:100%; height:100%; border:none;"></iframe>`;
+            
+            // Update title to target once loaded (rough estimate)
+            viewEl.classList.remove('home-view');
+            document.querySelector('#ui-' + tabId + ' .title').innerText = "Web";
+        };
+
+        // --- FULLSCREEN LOGIC ---
+        let toastTimeout;
+        function showToast() {
+            toast.classList.add('show');
+            clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => toast.classList.remove('show'), 4000);
+        }
+
+        document.getElementById('fullscreen-btn').addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+                showToast();
+            }
         });
+
+        // Listen for standard fullscreen changes (like hitting Esc or the API triggering)
+        document.addEventListener('fullscreenchange', () => {
+            if (document.fullscreenElement) {
+                topBar.style.display = 'none'; // Hide tabs
+            } else {
+                topBar.style.display = 'flex'; // Show tabs
+            }
+        });
+
+        // Custom exit using Shift+Q
+        document.addEventListener('keydown', (e) => {
+            if (e.shiftKey && e.key.toLowerCase() === 'q') {
+                if (document.fullscreenElement) {
+                    document.exitFullscreen();
+                }
+            }
+        });
+
+        // Initialization
+        document.getElementById('add-tab').addEventListener('click', createTab);
+        createTab(); // Open the first default tab on load
+
     </script>
 </body>
 </html>
