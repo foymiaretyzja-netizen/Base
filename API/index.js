@@ -12,8 +12,32 @@ const decode = (str) => {
 };
 
 app.all('*', async (req, res) => {
-    const pw = req.query.pw;
-    if (pw !== process.env.PROXY_PASSWORD) return res.status(401).send("Unauthorized");
+    // --- 🍪 THE COOKIE AUTH SYSTEM ---
+    let pw = req.query.pw;
+    let cookieHeader = req.headers.cookie || '';
+    
+    // Read the browser's cookies
+    let cookies = {};
+    cookieHeader.split(';').forEach(cookie => {
+        let parts = cookie.split('=');
+        if (parts.length === 2) {
+            cookies[parts[0].trim()] = parts[1].trim();
+        }
+    });
+
+    // If the password isn't in the URL, check if the browser remembered it
+    if (!pw && cookies['base_pw']) {
+        pw = cookies['base_pw'];
+    }
+
+    // If there is still no valid password, block access
+    if (pw !== process.env.PROXY_PASSWORD) {
+        return res.status(401).send("Unauthorized. Please append ?pw=YOUR_PASSWORD to the URL to login.");
+    }
+
+    // Tell the browser to memorize this password securely in the background
+    res.setHeader('Set-Cookie', `base_pw=${pw}; Path=/; Max-Age=31536000; SameSite=Lax`);
+    // ----------------------------------
 
     let target = req.query.target;
     
@@ -23,7 +47,6 @@ app.all('*', async (req, res) => {
     
     target = decode(target);
     
-    // FIXED: Using DuckDuckGo to stop the Google anti-bot redirect loop
     if (!target.includes('.') || target.includes(' ')) {
         target = 'https://duckduckgo.com/?q=' + encodeURIComponent(target);
     } else if (!target.startsWith('http')) {
@@ -39,12 +62,14 @@ app.all('*', async (req, res) => {
             }
         });
 
-        // FIXED: Track the final URL in case the website did a safe internal redirect
         const finalTarget = response.url;
         const contentType = response.headers.get('content-type') || '';
 
+        // Route for passing Images, Games, and CSS
         if (!contentType.includes('text/html')) {
             const buffer = await response.arrayBuffer();
+            // Re-apply cookie header here so game assets keep the authentication
+            res.setHeader('Set-Cookie', `base_pw=${pw}; Path=/; Max-Age=31536000; SameSite=Lax`);
             res.setHeader('Content-Type', contentType);
             res.setHeader('Access-Control-Allow-Origin', '*');
             res.setHeader('Cache-Control', 'max-age=31536000');
@@ -54,7 +79,6 @@ app.all('*', async (req, res) => {
         let html = await response.text();
         const $ = cheerio.load(html);
 
-        // FIXED: Kill "Meta Refreshes" to prevent proxy seizure loops
         $('meta[http-equiv="refresh"]').remove();
         $('title').text('My Drive - Google Drive');
         
@@ -63,7 +87,6 @@ app.all('*', async (req, res) => {
                 let val = $(el).attr(attr);
                 if (val && !val.startsWith('data:') && !val.startsWith('javascript:') && !val.startsWith('#')) {
                     try {
-                        // Use finalTarget here to ensure paths align perfectly
                         const absolute = new URL(val, finalTarget).href;
                         $(el).attr(attr, '/?pw=' + pw + '&target=' + encode(absolute));
                         if (tag === 'a') $(el).attr('target', '_self');
@@ -98,7 +121,7 @@ app.all('*', async (req, res) => {
             </script>
             <div id="base-menu" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.95);color:#fff;padding:10px 25px;border-radius:50px;z-index:9999999;display:none;border:1px solid #333;font-family:sans-serif;align-items:center;box-shadow:0 0 20px rgba(0,0,0,0.5);">
                 <span style="font-weight:bold;color:#fff;margin-right:15px">BASE</span>
-                <button onclick="location.href='/?pw=${pw}'" style="background:#222;color:#fff;border:none;padding:8px 15px;border-radius:20px;cursor:pointer;">Home</button>
+                <button onclick="window.location.replace('/')" style="background:#222;color:#fff;border:none;padding:8px 15px;border-radius:20px;cursor:pointer;">Home</button>
                 <button onclick="location.reload()" style="background:#222;color:#fff;border:none;padding:8px 15px;border-radius:20px;margin-left:5px;cursor:pointer;">Reload</button>
             </div>
         `;
