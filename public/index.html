@@ -3,273 +3,268 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" href="https://ssl.gstatic.com/docs/doclist/images/infinite_drive_2022q4.ico">
-    <title>My Drive - Google Drive</title>
+    <title>Base Proxy</title>
     <style>
-        /* Base Variables & Reset */
-        :root {
-            --bg: #0f0f0f;
-            --tab-bg: #1a1a1a;
-            --tab-active: #2a2a2a;
-            --text: #e0e0e0;
-            --accent: #ffffff;
+        /* --- BASE UI STYLES --- */
+        body { margin: 0; padding: 0; background: #000; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
+        
+        .topbar { background: #111; padding: 10px 20px; display: flex; align-items: center; border-bottom: 1px solid #333; }
+        .omnibox { flex-grow: 1; margin: 0 20px; padding: 8px 15px; border-radius: 20px; background: #222; border: 1px solid #444; color: #fff; outline: none; }
+        .icon-btn { background: none; border: none; color: #aaa; font-size: 20px; cursor: pointer; margin: 0 5px; transition: 0.2s; }
+        .icon-btn:hover { color: #fff; }
+
+        .browser-view { flex-grow: 1; border: none; width: 100%; background: #fff; }
+
+        /* --- SIDEBAR STYLES --- */
+        #sidebar {
+            position: fixed; top: 0; right: -350px; width: 350px; height: 100vh;
+            background: #111; border-left: 1px solid #333; box-shadow: -5px 0 15px rgba(0,0,0,0.5);
+            transition: right 0.3s ease; display: flex; flex-direction: column; z-index: 9999;
         }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-
-        /* Top Navigation & Tabs */
-        #top-bar { display: flex; align-items: center; background: var(--tab-bg); border-bottom: 1px solid #333; padding: 0 10px; height: 50px; flex-shrink: 0; transition: margin-top 0.3s ease; }
-        #tabs-container { display: flex; align-items: center; flex-grow: 1; overflow-x: auto; scrollbar-width: none; height: 100%; }
-        #tabs-container::-webkit-scrollbar { display: none; }
+        #sidebar.open { right: 0; }
         
-        .tab { display: flex; align-items: center; justify-content: space-between; padding: 0 15px; height: 100%; min-width: 160px; max-width: 220px; background: transparent; color: #888; cursor: pointer; border-right: 1px solid #333; font-size: 14px; transition: 0.2s; user-select: none; }
-        .tab:hover { background: #222; }
-        .tab.active { background: var(--tab-active); color: var(--accent); font-weight: 500; border-bottom: 3px solid var(--accent); }
+        .sidebar-header { padding: 20px; background: #1a1a1a; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+        .sidebar-header h2 { margin: 0; font-size: 18px; }
+        .close-btn { background: none; border: none; color: #fff; font-size: 24px; cursor: pointer; }
+
+        .sidebar-content { padding: 20px; overflow-y: auto; flex-grow: 1; }
         
-        /* Favicon and Title */
-        .tab-content { display: flex; align-items: center; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; flex-grow: 1; }
-        .favicon { width: 16px; height: 16px; margin-right: 8px; border-radius: 3px; display: none; background: #fff; }
-        .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .menu-item { display: flex; align-items: center; padding: 15px; background: #222; margin-bottom: 10px; border-radius: 8px; cursor: pointer; transition: 0.2s; border: 1px solid #333; }
+        .menu-item:hover { background: #333; }
+        .menu-item span { font-size: 20px; margin-right: 15px; }
 
-        .close-tab { font-size: 18px; margin-left: 10px; opacity: 0.5; padding: 0px 6px; border-radius: 4px; line-height: 1; }
-        .close-tab:hover { opacity: 1; background: rgba(255,255,255,0.1); }
-
-        #add-tab, #fullscreen-btn { background: transparent; border: none; color: #888; cursor: pointer; height: 100%; transition: 0.2s; }
-        #add-tab { font-size: 24px; padding: 0 15px; }
-        #add-tab:hover { color: var(--accent); background: #222; }
-        #fullscreen-btn { font-size: 20px; padding: 0 15px; margin-left: auto; }
-        #fullscreen-btn:hover { color: var(--accent); }
-
-        /* Viewport Area */
-        #viewport { flex-grow: 1; position: relative; width: 100%; height: 100%; }
-        .view { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; border: none; }
-        .view.active { display: flex; }
-
-        /* Home View Styling */
-        .home-view { align-items: center; justify-content: center; flex-direction: column; background: var(--bg); }
-        .home-view h1 { font-size: 4rem; font-weight: 900; letter-spacing: -2px; margin-bottom: 30px; }
-        .search-box { display: flex; width: 100%; max-width: 600px; gap: 10px; padding: 0 20px; }
-        .search-input { flex-grow: 1; padding: 16px 24px; border-radius: 30px; border: 1px solid #333; background: #1a1a1a; color: #fff; font-size: 16px; outline: none; transition: 0.2s; }
-        .search-input:focus { border-color: #555; background: #222; }
-
-        /* Toast Notification */
-        #toast { position: fixed; bottom: -60px; left: 50%; transform: translateX(-50%); background: #222; color: #fff; padding: 12px 24px; border-radius: 30px; border: 1px solid #444; font-size: 14px; font-weight: 500; transition: bottom 0.4s cubic-bezier(0.18, 0.89, 0.32, 1.28); z-index: 9999; box-shadow: 0 10px 30px rgba(0,0,0,0.5); pointer-events: none; }
-        #toast.show { bottom: 30px; }
-
-        /* Base Diagnostics Terminal */
-        #base-terminal { position: fixed; bottom: 0; left: 0; width: 100%; height: 250px; background: rgba(15, 15, 15, 0.98); border-top: 1px solid #333; font-family: 'Courier New', Courier, monospace; z-index: 9999999; display: none; flex-direction: column; backdrop-filter: blur(10px); box-shadow: 0 -10px 30px rgba(0,0,0,0.5); }
-        #term-header { display: flex; justify-content: space-between; align-items: center; background: #111; padding: 8px 15px; border-bottom: 1px solid #333; font-size: 13px; color: #888; font-weight: bold; }
-        #term-controls button { background: #2a2a2a; color: #fff; border: 1px solid #444; padding: 4px 12px; margin-left: 8px; cursor: pointer; border-radius: 4px; font-size: 12px; transition: 0.2s; }
-        #term-controls button:hover { background: #444; }
-        #term-output { flex-grow: 1; padding: 15px; overflow-y: auto; font-size: 13px; white-space: pre-wrap; word-break: break-word; color: #ff5555; }
-        .log-err { margin-bottom: 8px; border-bottom: 1px dashed #222; padding-bottom: 8px; line-height: 1.4; }
-        .log-time { color: #888; margin-right: 10px; font-size: 11px; }
+        /* --- SMART ERROR LOGGER STYLES --- */
+        .error-panel { display: none; }
+        .error-panel.active { display: block; }
+        .filter-tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .filter-btn { flex: 1; padding: 8px; background: #222; color: #aaa; border: 1px solid #444; border-radius: 6px; cursor: pointer; font-size: 12px; }
+        .filter-btn.active { background: #444; color: #fff; border-color: #666; }
+        
+        .domain-group { margin-bottom: 20px; border: 1px solid #333; border-radius: 8px; overflow: hidden; }
+        .domain-header { background: #222; padding: 10px; display: flex; justify-content: space-between; align-items: center; font-size: 14px; font-weight: bold; }
+        .copy-btn { background: #fff; color: #000; border: none; padding: 4px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; }
+        .log-entry { padding: 8px 10px; border-top: 1px solid #333; font-family: monospace; font-size: 11px; color: #ff6b6b; word-wrap: break-word; }
+        
+        .history-item { padding: 10px; border-bottom: 1px solid #333; font-size: 13px; color: #ccc; word-break: break-all; }
     </style>
 </head>
 <body>
 
-    <div id="top-bar">
-        <div id="tabs-container"></div>
-        <button id="add-tab" title="New Tab">+</button>
-        <button id="fullscreen-btn" title="Fullscreen">⛶</button>
+    <div class="topbar">
+        <button class="icon-btn" title="New Tab">+</button>
+        <button class="icon-btn" title="Fullscreen">⛶</button>
+        <input type="text" class="omnibox" id="urlInput" placeholder="Search the web or enter a URL..." autocomplete="off">
+        <button class="icon-btn" id="toggleSidebarBtn" title="Menu">⋮</button>
     </div>
 
-    <div id="viewport"></div>
-    <div id="toast">Press Shift+Q or Esc to exit fullscreen</div>
+    <iframe id="browserFrame" class="browser-view" src="/?pw=YOUR_PASSWORD&target="></iframe>
 
-    <div id="base-terminal">
-        <div id="term-header">
-            <span>> Base Diagnostics Terminal</span>
-            <div id="term-controls">
-                <button id="term-clear">Clear</button>
-                <button id="term-pause">Pause</button>
-                <button id="term-close">Close</button>
+    <div id="sidebar">
+        <div class="sidebar-header">
+            <h2 id="sidebarTitle">Menu</h2>
+            <button class="close-btn" id="closeSidebarBtn">×</button>
+        </div>
+        
+        <div class="sidebar-content" id="mainMenu">
+            <div class="menu-item" id="btnReload">
+                <span>🗘</span> <div>Reload Current Tab</div>
+            </div>
+            <div class="menu-item" id="btnHistory">
+                <span>☰</span> <div>Session History</div>
+            </div>
+            <div class="menu-item" id="btnErrors">
+                <span>&lt;/&gt;</span> <div>Smart Error Logs</div>
             </div>
         </div>
-        <div id="term-output"></div>
+
+        <div class="sidebar-content error-panel" id="historyPanel">
+            <button class="filter-btn" id="backToMenu1" style="margin-bottom: 15px; width: 100%;">← Back to Menu</button>
+            <div id="historyList"></div>
+        </div>
+
+        <div class="sidebar-content error-panel" id="errorPanel">
+            <button class="filter-btn" id="backToMenu2" style="margin-bottom: 15px; width: 100%;">← Back to Menu</button>
+            
+            <div class="filter-tabs">
+                <button class="filter-btn active" id="filterCurrent">Current Tab</button>
+                <button class="filter-btn" id="filterAll">All Tabs</button>
+            </div>
+            
+            <div id="errorList"></div>
+        </div>
     </div>
 
     <script>
-        const tabsContainer = document.getElementById('tabs-container');
-        const viewport = document.getElementById('viewport');
-        const topBar = document.getElementById('top-bar');
-        const toast = document.getElementById('toast');
-        
-        let tabCounter = 0;
-        let tabs = [];
-        let activeTabId = null;
-
-        // --- TAB MANAGEMENT ---
-        function createTab() {
-            tabCounter++;
-            const tabId = 'tab-' + tabCounter;
-            
-            const tabEl = document.createElement('div');
-            tabEl.className = 'tab';
-            tabEl.id = 'ui-' + tabId;
-            tabEl.innerHTML = `
-                <div class="tab-content">
-                    <img class="favicon" src="" alt="icon">
-                    <span class="title">Home</span>
-                </div>
-                <span class="close-tab">×</span>
-            `;
-            
-            tabEl.addEventListener('click', (e) => {
-                if(e.target.className !== 'close-tab') switchTab(tabId);
-            });
-            
-            tabEl.querySelector('.close-tab').addEventListener('click', () => closeTab(tabId));
-            tabsContainer.appendChild(tabEl);
-
-            const viewEl = document.createElement('div');
-            viewEl.className = 'view home-view';
-            viewEl.id = 'view-' + tabId;
-            viewEl.innerHTML = `
-                <h1>Base</h1>
-                <form class="search-box" onsubmit="launchSearch(event, '${tabId}')">
-                    <input type="text" class="search-input" placeholder="Search the web or enter URL..." autocomplete="off" required>
-                </form>
-            `;
-            
-            viewport.appendChild(viewEl);
-            tabs.push(tabId);
-            switchTab(tabId);
-        }
-
-        function switchTab(tabId) {
-            activeTabId = tabId;
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.getElementById('ui-' + tabId).classList.add('active');
-            
-            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-            document.getElementById('view-' + tabId).classList.add('active');
-        }
-
-        function closeTab(tabId) {
-            document.getElementById('ui-' + tabId).remove();
-            document.getElementById('view-' + tabId).remove();
-            tabs = tabs.filter(t => t !== tabId);
-            
-            if (activeTabId === tabId) {
-                if (tabs.length > 0) switchTab(tabs[tabs.length - 1]);
-                else createTab();
-            }
-        }
-
-        // --- PROXY LAUNCH & METADATA EXTRACTION ---
-        window.launchSearch = function(event, tabId) {
-            event.preventDefault();
-            const input = event.target.querySelector('.search-input').value.trim();
-            const targetBase64 = encodeURIComponent(btoa(input));
-            
-            let domain = "duckduckgo.com"; 
-            if (input.includes('.') && !input.includes(' ')) {
-                try { 
-                    const urlToParse = input.startsWith('http') ? input : 'https://' + input;
-                    domain = new URL(urlToParse).hostname; 
-                } catch(e) {}
-            }
-
-            const tabEl = document.getElementById('ui-' + tabId);
-            const titleEl = tabEl.querySelector('.title');
-            const iconEl = tabEl.querySelector('.favicon');
-            
-            titleEl.innerText = "Loading...";
-            iconEl.src = `https://www.google.com/s2/favicons?sz=32&domain=${domain}`;
-            iconEl.style.display = "block"; 
-
-            const viewEl = document.getElementById('view-' + tabId);
-            viewEl.innerHTML = `<iframe src="/?target=${targetBase64}" style="width:100%; height:100%; border:none;" id="iframe-${tabId}"></iframe>`;
-            viewEl.classList.remove('home-view');
-
-            const iframe = document.getElementById('iframe-' + tabId);
-            iframe.onload = () => {
-                try {
-                    const siteTitle = iframe.contentDocument.title;
-                    if (siteTitle && siteTitle.trim() !== "") titleEl.innerText = siteTitle;
-                    else titleEl.innerText = domain;
-                } catch(e) {
-                    titleEl.innerText = domain;
-                }
-            };
+        // --- DATA STATE ---
+        const state = {
+            history: [],
+            errors: {}, // Format: { "tiktok.com": ["error 1", "error 2"] }
+            currentDomain: "Unknown Site"
         };
 
-        // --- FULLSCREEN LOGIC ---
-        let toastTimeout;
-        function showToast() {
-            toast.classList.add('show');
-            clearTimeout(toastTimeout);
-            toastTimeout = setTimeout(() => toast.classList.remove('show'), 4000);
-        }
+        const elements = {
+            sidebar: document.getElementById('sidebar'),
+            frame: document.getElementById('browserFrame'),
+            input: document.getElementById('urlInput'),
+            title: document.getElementById('sidebarTitle')
+        };
 
-        document.getElementById('fullscreen-btn').addEventListener('click', () => {
-            if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen();
-                showToast();
+        // --- HELPER: GET DOMAIN ---
+        const extractDomain = (urlStr) => {
+            try {
+                // Decode proxy URL to get real target
+                const urlParams = new URLSearchParams(new URL(urlStr).search);
+                const targetB64 = urlParams.get('target');
+                if (targetB64) {
+                    const decoded = atob(decodeURIComponent(targetB64));
+                    return new URL(decoded).hostname;
+                }
+                return "Base Search / Home";
+            } catch (e) {
+                return "Unknown Site";
+            }
+        };
+
+        // --- CORE FUNCTIONALITY ---
+        // 1. Navigation & Tracking
+        elements.input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const query = e.target.value;
+                const encoded = encodeURIComponent(btoa(query));
+                // Replace ?pw=YOUR_PASSWORD with whatever your actual auth method uses
+                const fullUrl = `/?pw=YOUR_PASSWORD&target=${encoded}`;
+                
+                elements.frame.src = fullUrl;
+                
+                state.currentDomain = extractDomain(fullUrl);
+                state.history.push({ domain: state.currentDomain, query: query, time: new Date().toLocaleTimeString() });
             }
         });
 
-        document.addEventListener('fullscreenchange', () => {
-            topBar.style.display = document.fullscreenElement ? 'none' : 'flex';
-        });
-
-        document.addEventListener('keydown', (e) => {
-            if (e.shiftKey && e.key.toLowerCase() === 'q') {
-                if (document.fullscreenElement) document.exitFullscreen();
-            }
-        });
-
-        // --- BASE TERMINAL LOGIC ---
-        const terminal = document.getElementById('base-terminal');
-        const termOutput = document.getElementById('term-output');
-        const btnClear = document.getElementById('term-clear');
-        const btnPause = document.getElementById('term-pause');
-        const btnClose = document.getElementById('term-close');
-
-        let isTermPaused = false;
-        let termHoldTimer = null;
-
-        document.addEventListener('keydown', (e) => {
-            if (e.shiftKey && e.key.toLowerCase() === 't') {
-                if (!termHoldTimer) {
-                    termHoldTimer = setTimeout(() => {
-                        terminal.style.display = 'flex';
-                        termOutput.scrollTop = termOutput.scrollHeight;
-                    }, 5000);
+        // 2. Catch Errors from Backend (API/index.js postMessage)
+        window.addEventListener('message', (e) => {
+            if (e.data && e.data.type === 'base_error') {
+                const domain = state.currentDomain;
+                if (!state.errors[domain]) state.errors[domain] = [];
+                
+                const timeStamp = `[${new Date().toLocaleTimeString()}]`;
+                state.errors[domain].push(`${timeStamp} ${e.data.log}`);
+                
+                // Live update if error panel is open
+                if (document.getElementById('errorPanel').classList.contains('active')) {
+                    renderErrors();
                 }
             }
         });
 
-        document.addEventListener('keyup', (e) => {
-            if (e.key.toLowerCase() === 't' || e.key === 'Shift') {
-                clearTimeout(termHoldTimer);
-                termHoldTimer = null;
+        // 3. Shift+T Hotkey
+        document.addEventListener('keydown', (e) => {
+            if (e.shiftKey && e.key.toLowerCase() === 't') {
+                e.preventDefault();
+                openPanel('errorPanel', 'Smart Error Logs');
             }
         });
 
-        btnClose.addEventListener('click', () => terminal.style.display = 'none');
-        btnClear.addEventListener('click', () => termOutput.innerHTML = '');
-        btnPause.addEventListener('click', () => {
-            isTermPaused = !isTermPaused;
-            btnPause.innerText = isTermPaused ? 'Resume' : 'Pause';
-            btnPause.style.color = isTermPaused ? '#f1c40f' : '#fff';
-        });
-
-        window.addEventListener('message', (e) => {
-            if (e.data && e.data.type === 'base_error' && !isTermPaused) {
-                const logEl = document.createElement('div');
-                logEl.className = 'log-err';
-                const time = new Date().toLocaleTimeString();
-                logEl.innerHTML = `<span class="log-time">[${time}]</span> ${e.data.log}`;
-                termOutput.appendChild(logEl);
-                termOutput.scrollTop = termOutput.scrollHeight;
+        // --- SIDEBAR UI LOGIC ---
+        const openPanel = (panelId, title) => {
+            elements.sidebar.classList.add('open');
+            elements.title.innerText = title;
+            document.getElementById('mainMenu').style.display = 'none';
+            document.getElementById('historyPanel').classList.remove('active');
+            document.getElementById('errorPanel').classList.remove('active');
+            
+            if (panelId) {
+                document.getElementById(panelId).classList.add('active');
+                if (panelId === 'historyPanel') renderHistory();
+                if (panelId === 'errorPanel') renderErrors();
+            } else {
+                document.getElementById('mainMenu').style.display = 'block';
             }
+        };
+
+        document.getElementById('toggleSidebarBtn').addEventListener('click', () => openPanel(null, 'Menu'));
+        document.getElementById('closeSidebarBtn').addEventListener('click', () => elements.sidebar.classList.remove('open'));
+        document.getElementById('backToMenu1').addEventListener('click', () => openPanel(null, 'Menu'));
+        document.getElementById('backToMenu2').addEventListener('click', () => openPanel(null, 'Menu'));
+
+        // --- MENU BUTTON ACTIONS ---
+        // Reload
+        document.getElementById('btnReload').addEventListener('click', () => {
+            elements.frame.contentWindow.location.reload();
+            elements.sidebar.classList.remove('open');
         });
 
-        // Init
-        document.getElementById('add-tab').addEventListener('click', createTab);
-        createTab();
+        // History
+        document.getElementById('btnHistory').addEventListener('click', () => openPanel('historyPanel', 'Session History'));
+
+        // Errors
+        document.getElementById('btnErrors').addEventListener('click', () => openPanel('errorPanel', 'Smart Error Logs'));
+
+        // --- RENDERING LOGIC ---
+        const renderHistory = () => {
+            const list = document.getElementById('historyList');
+            if (state.history.length === 0) {
+                list.innerHTML = "<p style='color:#666; text-align:center;'>No history in this session.</p>";
+                return;
+            }
+            list.innerHTML = state.history.slice().reverse().map(h => 
+                `<div class="history-item"><strong>${h.time}</strong><br>${h.domain}<br><span style="color:#666;">${h.query}</span></div>`
+            ).join('');
+        };
+
+        // Smart Error Rendering
+        let errorFilter = 'current'; // 'current' or 'all'
+        
+        document.getElementById('filterCurrent').addEventListener('click', (e) => {
+            errorFilter = 'current';
+            e.target.classList.add('active');
+            document.getElementById('filterAll').classList.remove('active');
+            renderErrors();
+        });
+
+        document.getElementById('filterAll').addEventListener('click', (e) => {
+            errorFilter = 'all';
+            e.target.classList.add('active');
+            document.getElementById('filterCurrent').classList.remove('active');
+            renderErrors();
+        });
+
+        window.copyLogs = (domain) => {
+            const logs = state.errors[domain].join('\n');
+            navigator.clipboard.writeText(logs).then(() => alert(`Copied logs for ${domain}`));
+        };
+
+        const renderErrors = () => {
+            const list = document.getElementById('errorList');
+            list.innerHTML = '';
+
+            const domainsToRender = errorFilter === 'current' 
+                ? [state.currentDomain] 
+                : Object.keys(state.errors);
+
+            let hasErrors = false;
+
+            domainsToRender.forEach(domain => {
+                if (state.errors[domain] && state.errors[domain].length > 0) {
+                    hasErrors = true;
+                    let logsHtml = state.errors[domain].map(log => `<div class="log-entry">${log}</div>`).join('');
+                    
+                    list.innerHTML += `
+                        <div class="domain-group">
+                            <div class="domain-header">
+                                <span>${domain} (${state.errors[domain].length})</span>
+                                <button class="copy-btn" onclick="copyLogs('${domain}')">Copy</button>
+                            </div>
+                            <div>${logsHtml}</div>
+                        </div>
+                    `;
+                }
+            });
+
+            if (!hasErrors) {
+                list.innerHTML = "<p style='color:#666; text-align:center;'>No errors caught.</p>";
+            }
+        };
     </script>
 </body>
 </html>
