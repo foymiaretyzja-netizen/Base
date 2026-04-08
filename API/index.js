@@ -16,7 +16,6 @@ app.all('*', async (req, res) => {
     let pw = req.query.pw;
     let cookieHeader = req.headers.cookie || '';
     
-    // Read the browser's cookies
     let cookies = {};
     cookieHeader.split(';').forEach(cookie => {
         let parts = cookie.split('=');
@@ -25,17 +24,14 @@ app.all('*', async (req, res) => {
         }
     });
 
-    // If the password isn't in the URL, check if the browser remembered it
     if (!pw && cookies['base_pw']) {
         pw = cookies['base_pw'];
     }
 
-    // If there is still no valid password, block access
     if (pw !== process.env.PROXY_PASSWORD) {
         return res.status(401).send("Unauthorized. Please append ?pw=YOUR_PASSWORD to the URL to login.");
     }
 
-    // Tell the browser to memorize this password securely in the background
     res.setHeader('Set-Cookie', `base_pw=${pw}; Path=/; Max-Age=31536000; SameSite=Lax`);
     // ----------------------------------
 
@@ -65,10 +61,8 @@ app.all('*', async (req, res) => {
         const finalTarget = response.url;
         const contentType = response.headers.get('content-type') || '';
 
-        // Route for passing Images, Games, and CSS
         if (!contentType.includes('text/html')) {
             const buffer = await response.arrayBuffer();
-            // Re-apply cookie header here so game assets keep the authentication
             res.setHeader('Set-Cookie', `base_pw=${pw}; Path=/; Max-Age=31536000; SameSite=Lax`);
             res.setHeader('Content-Type', contentType);
             res.setHeader('Access-Control-Allow-Origin', '*');
@@ -102,11 +96,43 @@ app.all('*', async (req, res) => {
 
         const vNav = `
             <script>
+                // 1. Intercept normal link clicks
                 document.addEventListener('click', e => {
                     const link = e.target.closest('a');
                     if (link && link.href.includes('target=')) {
                         e.preventDefault();
                         window.location.replace(link.href);
+                    }
+                });
+
+                // 2. NEW: Intercept Form Submissions (Fixes DuckDuckGo searches)
+                document.addEventListener('submit', e => {
+                    const form = e.target;
+                    if (form.action && form.action.includes('target=')) {
+                        e.preventDefault();
+                        
+                        try {
+                            const urlParams = new URLSearchParams(new URL(form.action).search);
+                            const proxyTargetBase64 = urlParams.get('target');
+                            
+                            if (proxyTargetBase64) {
+                                // Decode original action back to normal URL
+                                const decodedAction = atob(decodeURIComponent(proxyTargetBase64));
+                                
+                                // Merge the typed form data into the URL safely
+                                if (!form.method || form.method.toLowerCase() === 'get') {
+                                    const formData = new FormData(form);
+                                    const searchParams = new URLSearchParams(formData).toString();
+                                    
+                                    const joiner = decodedAction.includes('?') ? '&' : '?';
+                                    const finalTarget = encodeURIComponent(btoa(decodedAction + joiner + searchParams));
+                                    
+                                    window.location.replace('/?target=' + finalTarget);
+                                }
+                            }
+                        } catch (err) {
+                            console.error('Form proxy error:', err);
+                        }
                     }
                 });
 
