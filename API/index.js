@@ -3,7 +3,6 @@ const cheerio = require('cheerio');
 const path = require('path');
 const app = express();
 
-// FIXED: Turned off automatic index serving so our proxy engine fires first!
 app.use(express.static(path.join(__dirname, '../public'), { index: false }));
 
 const encode = (str) => encodeURIComponent(Buffer.from(str).toString('base64'));
@@ -18,18 +17,15 @@ app.all('*', async (req, res) => {
 
     let target = req.query.target;
     
-    // IF NO TARGET: Send the separated Frontend UI
     if (!target) {
         return res.sendFile(path.join(__dirname, '../public/index.html'));
     }
     
-    // --- THE PROXY ENGINE ---
     target = decode(target);
     
-    // NEW: Smart Search Engine
-    // If it doesn't have a dot (like .com) or has a space, treat it as a Google Search
+    // FIXED: Using DuckDuckGo to stop the Google anti-bot redirect loop
     if (!target.includes('.') || target.includes(' ')) {
-        target = 'https://www.google.com/search?q=' + encodeURIComponent(target);
+        target = 'https://duckduckgo.com/?q=' + encodeURIComponent(target);
     } else if (!target.startsWith('http')) {
         target = 'https://' + target;
     }
@@ -43,6 +39,8 @@ app.all('*', async (req, res) => {
             }
         });
 
+        // FIXED: Track the final URL in case the website did a safe internal redirect
+        const finalTarget = response.url;
         const contentType = response.headers.get('content-type') || '';
 
         if (!contentType.includes('text/html')) {
@@ -56,6 +54,8 @@ app.all('*', async (req, res) => {
         let html = await response.text();
         const $ = cheerio.load(html);
 
+        // FIXED: Kill "Meta Refreshes" to prevent proxy seizure loops
+        $('meta[http-equiv="refresh"]').remove();
         $('title').text('My Drive - Google Drive');
         
         const rewrite = (tag, attr) => {
@@ -63,7 +63,8 @@ app.all('*', async (req, res) => {
                 let val = $(el).attr(attr);
                 if (val && !val.startsWith('data:') && !val.startsWith('javascript:') && !val.startsWith('#')) {
                     try {
-                        const absolute = new URL(val, target).href;
+                        // Use finalTarget here to ensure paths align perfectly
+                        const absolute = new URL(val, finalTarget).href;
                         $(el).attr(attr, '/?pw=' + pw + '&target=' + encode(absolute));
                         if (tag === 'a') $(el).attr('target', '_self');
                     } catch(e) {}
