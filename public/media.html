@@ -17,6 +17,12 @@
         .back-btn { background: #1a1a1a; border: 1px solid #333; color: #ccc; padding: 8px 16px; border-radius: 6px; cursor: pointer; transition: 0.2s; font-size: 13px; display: none; }
         .back-btn:hover { background: #222; color: #fff; border-color: #555; }
 
+        /* --- CATEGORY FILTER BAR --- */
+        .category-bar { display: flex; gap: 10px; margin-bottom: 25px; overflow-x: auto; padding-bottom: 5px; }
+        .cat-btn { background: #111; border: 1px solid #333; color: #888; padding: 8px 18px; border-radius: 20px; cursor: pointer; font-size: 13px; transition: 0.2s; white-space: nowrap; }
+        .cat-btn:hover { background: #1a1a1a; color: #ccc; }
+        .cat-btn.active { background: #333; color: #fff; font-weight: bold; border-color: #555; }
+
         /* --- VIEW 1: MEDIA GRID --- */
         .gallery-view { padding: 30px; overflow-y: auto; flex-grow: 1; }
         .video-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 25px; max-width: 1600px; margin: 0 auto; }
@@ -31,17 +37,16 @@
         
         .video-info { padding: 15px; }
         .video-title { margin: 0; font-size: 14px; color: #ddd; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .video-badge { display: inline-block; margin-top: 8px; font-size: 11px; padding: 3px 8px; background: #1a1a1a; border-radius: 4px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
 
         /* --- VIEW 2: SPLIT SCREEN PLAYER --- */
         .player-view { display: none; flex-grow: 1; overflow: hidden; max-width: 1600px; margin: 0 auto; width: 100%; box-sizing: border-box; padding: 20px; gap: 20px; }
         
-        /* Left Side: Main Video */
         .player-main { flex-grow: 1; display: flex; flex-direction: column; min-width: 0; }
         .main-video-wrapper { position: relative; width: 100%; padding-bottom: 56.25%; background: #000; border-radius: 12px; overflow: hidden; border: 1px solid #222; box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
         .main-video-wrapper iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; }
         .main-title { margin: 20px 0 0 0; font-size: 20px; color: #fff; line-height: 1.3; }
 
-        /* Right Side: Up Next */
         .player-sidebar { width: 380px; flex-shrink: 0; background: #0a0a0a; border: 1px solid #222; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; }
         .sidebar-header { padding: 15px; font-weight: bold; font-size: 14px; color: #888; border-bottom: 1px solid #222; background: #111; }
         .up-next-list { overflow-y: auto; flex-grow: 1; padding: 10px; }
@@ -51,7 +56,6 @@
         .up-next-thumb { width: 120px; height: 68px; border-radius: 6px; object-fit: cover; background: #222; flex-shrink: 0; }
         .up-next-title { font-size: 13px; color: #ccc; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
         
-        /* Scrollbar styling for sidebar */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #000; }
         ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
@@ -69,6 +73,14 @@
     </div>
 
     <div class="gallery-view" id="galleryView">
+        
+        <div class="category-bar" id="categoryBar">
+            <button class="cat-btn active" onclick="setCategory('all')">All</button>
+            <button class="cat-btn" onclick="setCategory('news')">News</button>
+            <button class="cat-btn" onclick="setCategory('trailers')">Trailers</button>
+            <button class="cat-btn" onclick="setCategory('ads')">Ads</button>
+        </div>
+
         <div class="video-grid" id="mediaGrid"></div>
     </div>
 
@@ -88,15 +100,14 @@
 
     <script>
         let mediaData = [];
+        let currentCategory = 'all';
 
-        // Smart parser to extract raw YouTube IDs from various link formats
         const getYouTubeId = (url) => {
             if (url.includes('youtu.be/')) return url.split('youtu.be/')[1].split('?')[0];
             if (url.includes('youtube.com/watch')) return new URLSearchParams(new URL(url).search).get('v');
             return null;
         };
 
-        // Initialize App
         async function loadMedia() {
             try {
                 const response = await fetch('media.json');
@@ -104,35 +115,55 @@
                 mediaData = await response.json();
                 renderGallery();
             } catch (error) {
-                // Route error to parent proxy shell
                 window.parent.postMessage({ type: 'base_error', log: `BaseMedia Fetch Error: ${error.message}` }, '*');
                 document.getElementById('mediaGrid').innerHTML = `<p style="color: #ff5252;">[!] Failed to load media.json</p>`;
             }
         }
 
-        // --- VIEW CONTROLLERS ---
+        // --- FILTER LOGIC ---
+        function setCategory(category) {
+            currentCategory = category;
+            
+            // Update active button styling
+            document.querySelectorAll('.cat-btn').forEach(btn => {
+                if (btn.innerText.toLowerCase() === category || (category === 'all' && btn.innerText === 'All')) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
 
+            renderGallery();
+        }
+
+        // --- VIEW CONTROLLERS ---
         function renderGallery() {
-            // UI Toggle
             document.getElementById('galleryView').style.display = 'block';
             document.getElementById('playerView').style.display = 'none';
             document.getElementById('backBtn').style.display = 'none';
-            
-            // Destroy active iframe so audio stops playing when returning to gallery
             document.getElementById('mainPlayer').src = '';
 
             const grid = document.getElementById('mediaGrid');
             grid.innerHTML = '';
 
-            mediaData.forEach(vid => {
+            // Filter data based on selected category
+            const filteredData = currentCategory === 'all' 
+                ? mediaData 
+                : mediaData.filter(v => (v.category || '').toLowerCase() === currentCategory);
+
+            if (filteredData.length === 0) {
+                grid.innerHTML = `<p style="color: #666; padding-left: 10px;">No videos found in this category.</p>`;
+                return;
+            }
+
+            filteredData.forEach(vid => {
                 const id = getYouTubeId(vid.url);
-                if (!id) return; // Skip invalid links
+                if (!id) return;
 
                 const card = document.createElement('div');
                 card.className = 'video-card';
-                card.onclick = () => openPlayer(id);
+                card.onclick = () => openPlayer(id, vid.category);
                 
-                // Uses YouTube's native high-quality thumbnail endpoint
                 card.innerHTML = `
                     <div class="thumbnail-wrapper">
                         <img src="https://img.youtube.com/vi/${id}/hqdefault.jpg" alt="thumbnail">
@@ -140,36 +171,41 @@
                     </div>
                     <div class="video-info">
                         <h3 class="video-title">${vid.title}</h3>
+                        <span class="video-badge">${vid.category || 'Uncategorized'}</span>
                     </div>
                 `;
                 grid.appendChild(card);
             });
         }
 
-        function openPlayer(activeId) {
-            // UI Toggle
+        function openPlayer(activeId, activeCategory) {
             document.getElementById('galleryView').style.display = 'none';
             document.getElementById('playerView').style.display = 'flex';
             document.getElementById('backBtn').style.display = 'block';
 
             const activeVid = mediaData.find(v => getYouTubeId(v.url) === activeId);
             
-            // Setup Main Player (Added ?autoplay=1 to auto-start when clicked)
             document.getElementById('mainPlayer').src = `https://www.youtube.com/embed/${activeId}?autoplay=1`;
             document.getElementById('mainTitle').innerText = activeVid.title;
 
-            // Setup 'Up Next' Sidebar
             const sidebar = document.getElementById('upNextList');
             sidebar.innerHTML = '';
             
-            // Filter out the video we are currently watching
-            const remainingVideos = mediaData.filter(v => getYouTubeId(v.url) !== activeId);
+            // Smart Up Next: Show videos from the same category, excluding the active one
+            let relatedVideos = mediaData.filter(v => getYouTubeId(v.url) !== activeId);
+            if (activeCategory) {
+                relatedVideos = relatedVideos.filter(v => v.category === activeCategory);
+            }
             
-            remainingVideos.forEach(vid => {
+            if (relatedVideos.length === 0) {
+                sidebar.innerHTML = `<p style="color: #555; text-align: center; margin-top: 20px; font-size: 13px;">No more videos in this category.</p>`;
+            }
+
+            relatedVideos.forEach(vid => {
                 const id = getYouTubeId(vid.url);
                 const item = document.createElement('div');
                 item.className = 'up-next-item';
-                item.onclick = () => openPlayer(id); // Clicking re-triggers player setup
+                item.onclick = () => openPlayer(id, vid.category); 
                 
                 item.innerHTML = `
                     <img src="https://img.youtube.com/vi/${id}/mqdefault.jpg" class="up-next-thumb">
